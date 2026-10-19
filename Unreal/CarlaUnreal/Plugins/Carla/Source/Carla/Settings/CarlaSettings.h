@@ -1,0 +1,166 @@
+// Copyright (c) 2026 Computer Vision Center (CVC) at the Universitat Autonoma
+// de Barcelona (UAB).
+//
+// This work is licensed under the terms of the MIT license.
+// For a copy, see <https://opensource.org/licenses/MIT>.
+
+#pragma once
+#include "Carla/Settings/QualityLevelUE.h"
+
+#include <util/ue-header-guard-begin.h>
+#include "Engine/StaticMesh.h"
+#include <util/ue-header-guard-end.h>
+
+#include "CarlaSettings.generated.h"
+
+/// Global settings for CARLA.
+///
+/// Setting object used to hold both config settings and editable ones in one
+/// place. To ensure the settings are saved to the specified config file make
+/// sure to add props using the globalconfig or config meta.
+UCLASS(BlueprintType, Blueprintable, config = Game, defaultconfig)
+class CARLA_API UCarlaSettings : public UObject
+{
+  GENERATED_BODY()
+
+public:
+
+  /// Sets the new quality settings level and make changes in the game related
+  /// to it.
+  ///
+  /// @note This will not apply the quality settings. Use ApplyQualitySettings
+  /// functions instead
+  /// @param InQualityLevel Store the new quality.
+  UFUNCTION(BlueprintCallable, Category = "CARLA Settings")
+  void SetQualityLevel(EQualityLevel InQualityLevel)
+  {
+    QualityLevel = InQualityLevel;
+  }
+
+  /// @return current quality settings level (could not have been applied yet).
+  UFUNCTION(BlueprintCallable, Category = "CARLA Settings")
+  EQualityLevel GetQualityLevel() const
+  {
+    return QualityLevel;
+  }
+
+  /// Load the settings based on the command-line arguments and the INI file if
+  /// provided.
+  void LoadSettings();
+
+  /// Load the settings from the given string (formatted as INI). CarlaServer
+  /// section is ignored.
+  void LoadSettingsFromString(const FString &INIFileContents);
+
+  /// Log settings values.
+  void LogSettings() const;
+
+public:
+
+  /// CARLA_ROAD name to tag road mesh actors.
+  static const FName CARLA_ROAD_TAG;
+
+  /// CARLA_SKY name to tag the sky sphere (BPS) actors in the scenes.
+  static const FName CARLA_SKY_TAG;
+
+private:
+
+  void LoadSettingsFromFile(const FString &FilePath, bool bLogOnFailure);
+
+  /// File name of the settings file used to load this settings. Empty if none
+  /// used.
+  UPROPERTY(Category = "CARLA Settings|Debug", VisibleAnywhere)
+  FString CurrentFileName;
+
+  // ===========================================================================
+  /// @name CARLA Server
+  // ===========================================================================
+  /// @{
+
+public:
+
+  /// World port to listen for client connections.
+  UPROPERTY(Category = "CARLA Server", VisibleAnywhere, meta = (EditCondition = bUseNetworking))
+  uint32 RPCPort = 2000u;
+
+  /// setting for the streaming port.
+  uint32 StreamingPort = 2001u;
+
+  /// setting for the secondary servers port.
+  uint32 SecondaryPort = 2002u;
+
+  /// setting for the IP and Port of the primary server to connect.
+  std::string PrimaryIP = "";
+  uint32      PrimaryPort = 2002u;
+
+  /// In synchronous mode, CARLA waits every tick until the control from the
+  /// client is received.
+  UPROPERTY(Category = "CARLA Server", VisibleAnywhere, meta = (EditCondition = bUseNetworking))
+  bool bSynchronousMode = false;
+
+  /// Enable or disable the viewport rendering of the world. Disabled by
+  /// default.
+  UPROPERTY(Category = "CARLA Server", VisibleAnywhere)
+  bool bDisableRendering = false;
+
+  // ===========================================================================
+  /// @name Quality Settings
+  // ===========================================================================
+  /// @{
+
+private:
+
+  /// Quality Settings level.
+  UPROPERTY(Category = "Quality Settings", VisibleAnywhere, meta = (AllowPrivateAccess = "true"))
+  EQualityLevel QualityLevel = EQualityLevel::Epic;
+
+public:
+
+  /// EPIC quality Road Materials. Uses slots name to set material for each part
+  /// of the road for Epic quality.
+  UPROPERTY(Category = "Quality Settings/Epic",
+      BlueprintReadOnly,
+      EditAnywhere,
+      config,
+      DisplayName = "Road Materials List for EPIC Quality")
+  TArray<FStaticMaterial> EpicRoadMaterials;
+
+  /// Enable ROS2
+  UPROPERTY(Category = "Quality Settings/ROS2",
+      BlueprintReadOnly,
+      EditAnywhere,
+      config,
+      DisplayName = "Enable ROS2")
+  bool ROS2 = false;
+
+  /// Default ROS2 topic visibility on startup. When true, every topic offered by
+  /// the implementation is visible from the beginning; when false, only the
+  /// sensors/actors explicitly enabled via EnableForROS calls are visible.
+  UPROPERTY(Category = "Quality Settings/ROS2",
+      BlueprintReadOnly,
+      EditAnywhere,
+      config,
+      DisplayName = "ROS2 Topics Visible On Startup")
+  bool ROS2TopicVisibility = true;
+
+  /// DDS middleware (RMW) used by the native ROS2 connector. Accepted values:
+  /// "fastdds" (default) and "cyclonedds". Set via the --rmw= command-line
+  /// argument. CycloneDDS is only available on Linux.
+  UPROPERTY(Category = "Quality Settings/ROS2",
+      BlueprintReadOnly,
+      EditAnywhere,
+      config,
+      DisplayName = "ROS2 RMW")
+  FString RmwName = TEXT("fastdds");
+
+  /// ROS2 domain id. Set via --ros-domain-id=<N> on the command line.
+  /// -1 (the default) keeps each middleware's native default domain.
+  UPROPERTY(Category = "Quality Settings/ROS2",
+      BlueprintReadOnly,
+      EditAnywhere,
+      config,
+      DisplayName = "ROS2 Domain ID")
+  int32 ROS2DomainId = -1;
+
+  /// @}
+};

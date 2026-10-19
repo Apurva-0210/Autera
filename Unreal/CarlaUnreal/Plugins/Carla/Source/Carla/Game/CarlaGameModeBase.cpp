@@ -1,0 +1,1031 @@
+// Copyright (c) 2026 Computer Vision Center (CVC) at the Universitat Autonoma
+// de Barcelona (UAB).
+//
+// This work is licensed under the terms of the MIT license.
+// For a copy, see <https://opensource.org/licenses/MIT>.
+
+#include "Carla/Game/CarlaGameModeBase.h"
+#include "Carla.h"
+#include "Carla/Game/Tagger.h"
+#include "Carla/Game/CarlaHUD.h"
+#include "Carla/Game/CarlaStatics.h"
+#include "Carla/Game/CarlaStaticDelegates.h"
+#include "Carla/Lights/CarlaLight.h"
+#include "Carla/Vehicle/VehicleSpawnPoint.h"
+#include "Carla/Util/BoundingBoxCalculator.h"
+#include "Carla/Weather/Sky.h"
+#include "BlueprintLibary/WeatherJsonUtils.h"
+
+#include <util/disable-ue4-macros.h>
+#include "carla/opendrive/OpenDriveParser.h"
+#include "carla/road/element/RoadInfoSignal.h"
+#include <carla/rpc/EnvironmentObject.h>
+#include <carla/rpc/WeatherParameters.h>
+#include <carla/rpc/MapLayer.h>
+#include <util/enable-ue4-macros.h>
+
+#include <util/ue-header-guard-begin.h>
+#include "Components/DirectionalLightComponent.h"
+#include "Engine/DecalActor.h"
+#include "Engine/LevelStreaming.h"
+#include "Engine/LocalPlayer.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Engine/StaticMeshActor.h"
+#include "EngineUtils.h"
+#include "Async/ParallelFor.h"
+#include "DynamicRHI.h"
+#include "DrawDebugHelpers.h"
+#include "Kismet/KismetSystemLibrary.h"
+#include "Misc/PackageName.h"
+#include <util/ue-header-guard-end.h>
+
+namespace cr = carla::road;
+namespace crp = carla::rpc;
+namespace cre = carla::road::element;
+
+ACarlaGameModeBase::ACarlaGameModeBase(const FObjectInitializer& ObjectInitializer)
+  : Super(ObjectInitializer)
+{
+  PrimaryActorTick.bCanEverTick = true;
+  PrimaryActorTick.TickGroup = TG_PrePhysics;
+  bAllowTickBeforeBeginPlay = false;
+
+  Episode = CreateDefaultSubobject<UCarlaEpisode>(TEXT("Episode"));
+
+  Recorder = CreateDefaultSubobject<ACarlaRecorder>(TEXT("Recorder"));
+
+  ObjectRegister = CreateDefaultSubobject<UObjectRegister>(TEXT("ObjectRegister"));
+
+  // HUD
+  HUDClass = ACarlaHUD::StaticClass();
+
+  TaggerDelegate = CreateDefaultSubobject<UTaggerDelegate>(TEXT("TaggerDelegate"));
+  CarlaSettingsDelegate = CreateDefaultSubobject<UCarlaSettingsDelegate>(TEXT("CarlaSettingsDelegate"));
+}
+
+const FString ACarlaGameModeBase::GetRelativeMapPath() const
+{
+  UWorld* World = GetWorld();
+  TSoftObjectPtr<UWorld> AssetPtr (World);
+  FString Path = FPaths::GetPath(AssetPtr.GetLongPackageName());
+  Path.RemoveFromStart("/Game/");
+  return Path;
+}
+
+const FString ACarlaGameModeBase::GetFullMapPath() const
+{
+  // Maps of mounted content packs live under their own mount point
+  // (/<Pack>/Maps/...), so resolve through the package name table instead of
+  // assuming everything hangs off the project content dir.
+  UWorld* World = GetWorld();
+  const FString PackagePath = FPaths::GetPath(World->GetPackage()->GetName());
+  FString Filename;
+  if (!PackagePath.StartsWith(TEXT("/Game/")) &&
+      FPackageName::TryConvertLongPackageNameToFilename(PackagePath, Filename))
+  {
+    return FPaths::ConvertRelativePathToFull(Filename);
+  }
+  FString Path = GetRelativeMapPath();
+  return FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir()) + Path;
+}
+
+void ACarlaGameModeBase::InitGame(
+    const FString &MapName,
+    const FString &Options,
+    FString &ErrorMessage)
+{
+  TRACE_CPUPROFILER_EVENT_SCOPE(ACarlaGameModeBase::InitGame);
+  Super::InitGame(MapName, Options, ErrorMessage);
+
+  UWorld* World = GetWorld();
+  check(World != nullptr);
+  FString InMapName(MapName);
+
+  checkf(
+      Episode != nullptr,
+      TEXT("Missing episode, can't continue without an episode!"));
+
+  AActor* LMManagerActor =
+      UGameplayStatics::GetActorOfClass(GetWorld(), ALargeMapManager::StaticClass());
+  LMManager = Cast<ALargeMapManager>(LMManagerActor);
+  if (LMManager && World->GetWorldPartition() != nullptr)
+  {
+    // World Partition map (e.g. a legacy tiled map converted with the
+    // WorldPartitionConvert commandlet): the engine streams cells natively and
+    // keeps absolute double-precision coordinates, so the UE4-era large-map
+    // machinery (WorldComposition tiles + origin rebasing) must not run. The
+    // conversion carries the old manager actor over; remove it before it ticks.
+    UE_LOG(LogCarla, Log, TEXT(
+        "World Partition map detected: disabling legacy LargeMapManager"));
+    LMManager->Destroy();
+    LMManager = nullptr;
+  }
+  if (LMManager) {
+    if (LMManager->GetNumTiles() == 0)
+    {
+      LMManager->GenerateLargeMap();
+    }
+    InMapName = LMManager->LargeMapName;
+  }
+
+#if WITH_EDITOR
+    {
+      // When playing in editor the map name gets an extra prefix, here we
+      // remove it.
+      FString CorrectedMapName = InMapName;
+      constexpr auto PIEPrefix = TEXT("UEDPIE_0_");
+      CorrectedMapName.RemoveFromStart(PIEPrefix);
+      UE_LOG(LogCarla, Log, TEXT("Corrected map name from %s to %s"), *InMapName, *CorrectedMapName);
+      Episode->MapName = CorrectedMapName;
+    }
+#else
+  Episode->MapName = InMapName;
+#endif // WITH_EDITOR
+
+  GameInstance = Cast<UCarlaGameInstance>(GetGameInstance());
+  checkf(
+      GameInstance != nullptr,
+      TEXT("GameInstance is not a UCarlaGameInstance, did you forget to set "
+           "it in the project settings?"));
+
+  if (TaggerDelegate != nullptr) {
+    TaggerDelegate->RegisterSpawnHandler(World);
+  } else {
+    UE_LOG(LogCarla, Error, TEXT("Missing TaggerDelegate!"));
+  }
+
+  if(CarlaSettingsDelegate != nullptr) {
+    CarlaSettingsDelegate->ApplyQualityLevelPostRestart();
+    CarlaSettingsDelegate->RegisterSpawnHandler(World);
+  } else {
+    UE_LOG(LogCarla, Error, TEXT("Missing CarlaSettingsDelegate!"));
+  }
+
+  if (World->GetWorldPartition() != nullptr &&
+      UGameplayStatics::GetActorOfClass(World, ASkyBase::StaticClass()) == nullptr)
+  {
+    // Legacy tiled maps converted to World Partition have no sun/sky rig (the
+    // conversion drops the legacy DirectionalLight/SkyLight, which would
+    // otherwise stream in as static orphan lights stuck at the saved sun
+    // angle). BP_CarlaWeather drives all lighting through the components of a
+    // single ASkyBase-derived actor, so spawn the standard BP_Carla_Sky (the
+    // same rig Town10 places in-level) before the weather actor is created.
+    UClass* SkyClass = LoadClass<ASkyBase>(
+        nullptr,
+        TEXT("/Game/Carla/Blueprints/LevelDesign/BP_Carla_Sky.BP_Carla_Sky_C"));
+    if (SkyClass != nullptr)
+    {
+      ASkyBase* SkyActor = World->SpawnActor<ASkyBase>(SkyClass);
+      if (SkyActor != nullptr)
+      {
+        // A level-placed rig that is spatially loaded streams in after this,
+        // and replaces this one (see ASkyBase::BeginPlay).
+        SkyActor->Tags.Add(ASkyBase::FallbackSkyTag);
+        // The class defaults leave the sun at the horizon (pitch 0), which
+        // renders a black atmosphere and an unlit ground; level-placed rigs
+        // (Town10) carry a proper rotation in their instance data. Point the
+        // sun down as a sane noon default until the weather drives it.
+        TArray<UDirectionalLightComponent*> SunComponents;
+        SkyActor->GetComponents<UDirectionalLightComponent>(SunComponents);
+        for (UDirectionalLightComponent* SunComponent : SunComponents)
+        {
+          if (SunComponent->GetName().Contains(TEXT("Sun")))
+          {
+            SunComponent->SetWorldRotation(FRotator(-45.0f, 45.0f, 0.0f));
+          }
+        }
+      }
+      UE_LOG(LogCarla, Log, TEXT(
+          "World Partition map without a sky rig: spawned BP_Carla_Sky"));
+    }
+    // BP_GeneralSceneSettings used to be spawned alongside the sky here too,
+    // but everything it did (post-process delta-baseline, cloud density) is
+    // now handled natively in AWeather::ApplyWeatherToSkyActor -- no actor
+    // needed.
+  }
+
+  AActor* WeatherActor =
+      UGameplayStatics::GetActorOfClass(GetWorld(), AWeather::StaticClass());
+  if (WeatherActor != nullptr) {
+    UE_LOG(LogCarla, Log, TEXT("Existing weather actor. Doing nothing then!"));
+    Episode->Weather = static_cast<AWeather*>(WeatherActor);
+  }
+  else {
+    // Fall back to BP_CarlaWeather if WeatherClass is unset on the BP
+    // game mode. Without this, set_weather() RPCs silently no-op because
+    // Episode->Weather stays null and CarlaServer::get_weather_parameters
+    // returns the default-constructed FWeatherParameters{}. Resolved at
+    // runtime (rather than via ConstructorHelpers) so the package cook is
+    // not forced to re-validate the BP asset registry every C++ rebuild.
+    if (WeatherClass == nullptr) {
+      WeatherClass = LoadClass<AWeather>(
+          nullptr,
+          TEXT("/Game/Carla/Blueprints/Weather/BP_CarlaWeather.BP_CarlaWeather_C"));
+    }
+    if (WeatherClass != nullptr) {
+      Episode->Weather = World->SpawnActor<AWeather>(WeatherClass);
+    } else {
+      UE_LOG(LogCarla, Error, TEXT("Missing weather class!"));
+    }
+  }
+
+  GameInstance->NotifyInitGame();
+
+  OnEpisodeSettingsChangeHandle = FCarlaStaticDelegates::OnEpisodeSettingsChange.AddUObject(
+        this,
+        &ACarlaGameModeBase::OnEpisodeSettingsChanged);
+
+  SpawnActorFactories();
+
+  // make connection between Episode and Recorder
+  Recorder->SetEpisode(Episode);
+  Episode->SetRecorder(Recorder);
+
+  LoadGeoReference();
+}
+
+void ACarlaGameModeBase::LoadGeoReference()
+{
+  ParseOpenDrive();
+
+  if(Map.has_value())
+  {
+    StoreSpawnPoints();
+  }
+}
+
+void ACarlaGameModeBase::RestartPlayer(AController *NewPlayer)
+{
+  if (CarlaSettingsDelegate != nullptr)
+  {
+    CarlaSettingsDelegate->ApplyQualityLevelPreRestart();
+  }
+
+  Super::RestartPlayer(NewPlayer);
+}
+
+// Whether BP_CarlaWeather's per-town "DefaultWeathers" table (a blueprint
+// TMap<FString, FWeatherParameters> variable) has an entry for MapName. Looked
+// up by authored name through reflection, like the other blueprint variables
+// the C++ side reads (see AWeather::ApplyWeatherToSkyActor).
+static bool IsMapInBlueprintWeatherTable(const AWeather* Weather, const FString& MapName)
+{
+  if (Weather == nullptr)
+  {
+    return false;
+  }
+  for (TFieldIterator<FProperty> It(Weather->GetClass()); It; ++It)
+  {
+    if ((*It)->GetAuthoredName() != TEXT("DefaultWeathers") && (*It)->GetName() != TEXT("DefaultWeathers"))
+    {
+      continue;
+    }
+    const FMapProperty* MapProp = CastField<FMapProperty>(*It);
+    if (MapProp == nullptr)
+    {
+      return false;
+    }
+    const FStrProperty* KeyProp = CastField<FStrProperty>(MapProp->KeyProp);
+    if (KeyProp == nullptr)
+    {
+      return false;
+    }
+    FScriptMapHelper Helper(MapProp, MapProp->ContainerPtrToValuePtr<void>(Weather));
+    for (FScriptMapHelper::FIterator MapIt(Helper); MapIt; ++MapIt)
+    {
+      if (KeyProp->GetPropertyValue(Helper.GetKeyPtr(MapIt.GetInternalIndex())) == MapName)
+      {
+        return true;
+      }
+    }
+    return false;
+  }
+  return false;
+}
+
+void ACarlaGameModeBase::BeginPlay()
+{
+  Super::BeginPlay();
+
+  UWorld* World = GetWorld();
+  check(World != nullptr);
+
+  LoadMapLayer(GameInstance->GetCurrentMapLayer());
+  ReadyToRegisterObjects = true;
+
+  ATagger::TagActorsInLevel(*World, true);
+  TaggerDelegate->SetSemanticSegmentationEnabled();
+
+  // World Partition streams cells in after BeginPlay, and their actors are
+  // loaded, not spawned, so neither the tagging sweep above nor the
+  // TaggerDelegate spawn handler ever sees them. Tag each cell's level as it
+  // is added to the world (the legacy ALargeMapManager did this for
+  // WorldComposition tiles, but it retires itself on World Partition maps).
+  if (World->GetWorldPartition() != nullptr)
+  {
+    FWorldDelegates::LevelAddedToWorld.AddUObject(
+        this, &ACarlaGameModeBase::OnLevelAddedToWorld);
+  }
+
+  // HACK: fix transparency see-through issues
+  // The problem: transparent objects are visible through walls.
+  // This is due to a weird interaction between the SkyAtmosphere component,
+  // the shadows of a directional light (the sun)
+  // and the custom depth set to 3 used for semantic segmentation
+  // The solution: Spawn a Decal.
+  // It just works!
+  World->SpawnActor<ADecalActor>(
+      FVector(0,0,-1000000), FRotator(0,0,0), FActorSpawnParameters());
+
+  ATrafficLightManager* Manager = GetTrafficLightManager();
+  Manager->InitializeTrafficLights();
+
+  Episode->InitializeAtBeginPlay();
+  GameInstance->NotifyBeginEpisode(*Episode);
+  OnEpisodeInitialisedDelegate.Broadcast(Episode);
+
+  if (Episode->Weather != nullptr)
+  {
+    // Per-map defaults now come from MapDefaults.json (either a named
+    // {time, condition} preset pair via ASkyBase::SetAsMapDefault, or a full
+    // inline snapshot via ASkyBase::SaveCurrentWeatherAsMapDefault --
+    // GetMapDefaultWeather resolves whichever shape the entry is), not the
+    // flat carla::rpc::WeatherParameters::Default sentinel (which forces e.g.
+    // SunAltitudeAngle to -1 regardless of what the map's sky rig was
+    // authored with). Fall back to the old sentinel only for maps with no
+    // MapDefaults.json entry yet.
+    FString MapName = World->GetMapName();
+    MapName.RemoveFromStart(World->StreamingLevelsPrefix);
+    FWeatherParameters DefaultWeather;
+    if (UWeatherJsonUtils::GetMapDefaultWeather(MapName, Episode->Weather->GetCurrentWeather(), DefaultWeather))
+    {
+      Episode->Weather->ApplyWeather(DefaultWeather);
+      // The weather actor was spawned during this BeginPlay, so its own
+      // BeginPlay (BP_CarlaWeather: per-town "DefaultWeathers" table, or a
+      // hard-coded fallback + "<map> default weather not found") is deferred
+      // until the world has begun play -- i.e. it runs AFTER the ApplyWeather
+      // above and silently replaces the MapDefaults.json entry (observed on
+      // every baked twin: sun 45/220 + fog 2.0 instead of the authored
+      // defaults). For maps the blueprint table does not know, re-apply the
+      // JSON entry on the next tick so the file wins over the fallback. Maps
+      // in the table (the stock towns) are left to the table on purpose: it
+      // is what they have always rendered with, and several JSON entries
+      // (e.g. Town10HD_Opt) disagree with it.
+      if (!IsMapInBlueprintWeatherTable(Episode->Weather, MapName))
+      {
+        TWeakObjectPtr<AWeather> WeakWeather = Episode->Weather;
+        World->GetTimerManager().SetTimerForNextTick([WeakWeather, DefaultWeather]()
+        {
+          if (WeakWeather.IsValid())
+          {
+            WeakWeather->ApplyWeather(DefaultWeather);
+          }
+        });
+      }
+    }
+    else
+    {
+      Episode->Weather->ApplyWeather(carla::rpc::WeatherParameters::Default);
+    }
+  }
+
+  /// @todo Recorder should not tick here, FCarlaEngine should do it.
+  // check if replayer is waiting to autostart
+  if (Recorder)
+  {
+    Recorder->GetReplayer()->CheckPlayAfterMapLoaded();
+  }
+
+  if(ReadyToRegisterObjects && PendingLevelsToLoad == 0)
+  {
+    RegisterEnvironmentObjects();
+  }
+
+  if (LMManager) {
+    LMManager->RegisterInitialObjects();
+    LMManager->ConsiderSpectatorAsEgo(Episode->GetSettings().SpectatorAsEgo);
+  }
+
+  // Manually run begin play on lights as it may not run on sublevels
+  TArray<AActor*> FoundActors;
+  UGameplayStatics::GetAllActorsOfClass(World, AActor::StaticClass(), FoundActors);
+  for(AActor* Actor : FoundActors)
+  {
+    TArray<UCarlaLight*> Lights;
+    Actor->GetComponents(Lights, false);
+    for(UCarlaLight* Light : Lights)
+    {
+      Light->RegisterLight();
+    }
+  }
+  EnableOverlapEvents();
+}
+
+TArray<FString> ACarlaGameModeBase::GetNamesOfAllActors()
+{
+  TArray<FString> Names;
+  TArray<AActor*> Actors;
+  UGameplayStatics::GetAllActorsOfClass(GetWorld(), AActor::StaticClass(), Actors);
+  for (AActor* Actor : Actors)
+  {
+    TArray<UStaticMeshComponent*> StaticMeshes;
+    Actor->GetComponents(StaticMeshes);
+    if (StaticMeshes.Num())
+    {
+      Names.Add(Actor->GetName());
+    }
+  }
+  return Names;
+}
+
+AActor* ACarlaGameModeBase::FindActorByName(const FString& ActorName)
+{
+  TArray<AActor*> Actors;
+  UGameplayStatics::GetAllActorsOfClass(GetWorld(), AActor::StaticClass(), Actors);
+  for (AActor* Actor : Actors)
+  {
+    if(Actor->GetName() == ActorName)
+    {
+      return Actor;
+      break;
+    }
+  }
+  return nullptr;
+}
+
+UTexture2D* ACarlaGameModeBase::CreateUETexture(const carla::rpc::TextureColor& Texture)
+{
+  FlushRenderingCommands();
+  TArray<FColor> Colors;
+  for (uint32_t y = 0; y < Texture.GetHeight(); y++)
+  {
+    for (uint32_t x = 0; x < Texture.GetWidth(); x++)
+    {
+      auto& Color = Texture.At(x,y);
+      Colors.Add(FColor(Color.r, Color.g, Color.b, Color.a));
+    }
+  }
+  UTexture2D* UETexture = UTexture2D::CreateTransient(Texture.GetWidth(), Texture.GetHeight(), EPixelFormat::PF_B8G8R8A8);
+  FTexture2DMipMap& Mip = UETexture->GetPlatformData()->Mips[0];
+  void* Data = Mip.BulkData.Lock( LOCK_READ_WRITE );
+  FMemory::Memcpy( Data,
+      &Colors[0],
+      Texture.GetWidth()*Texture.GetHeight()*sizeof(FColor));
+  Mip.BulkData.Unlock();
+  UETexture->UpdateResource();
+  return UETexture;
+}
+
+UTexture2D* ACarlaGameModeBase::CreateUETexture(const carla::rpc::TextureFloatColor& Texture)
+{
+  FlushRenderingCommands();
+  TArray<FFloat16Color> Colors;
+  for (uint32_t y = 0; y < Texture.GetHeight(); y++)
+  {
+    for (uint32_t x = 0; x < Texture.GetWidth(); x++)
+    {
+      auto& Color = Texture.At(x,y);
+      Colors.Add(FLinearColor(Color.r, Color.g, Color.b, Color.a));
+    }
+  }
+  UTexture2D* UETexture = UTexture2D::CreateTransient(Texture.GetWidth(), Texture.GetHeight(), EPixelFormat::PF_FloatRGBA);
+  FTexture2DMipMap& Mip = UETexture->GetPlatformData()->Mips[0];
+  void* Data = Mip.BulkData.Lock( LOCK_READ_WRITE );
+  FMemory::Memcpy( Data,
+      &Colors[0],
+      Texture.GetWidth()*Texture.GetHeight()*sizeof(FFloat16Color));
+  Mip.BulkData.Unlock();
+  UETexture->UpdateResource();
+  return UETexture;
+}
+
+void ACarlaGameModeBase::ApplyTextureToActor(
+    AActor* Actor,
+    UTexture2D* Texture,
+    const carla::rpc::MaterialParameter& TextureParam)
+{
+  namespace cr = carla::rpc;
+  TArray<UStaticMeshComponent*> StaticMeshes;
+  Actor->GetComponents(StaticMeshes);
+  for (UStaticMeshComponent* Mesh : StaticMeshes)
+  {
+    for (int i = 0; i < Mesh->GetNumMaterials(); ++i)
+    {
+      UMaterialInterface* OriginalMaterial = Mesh->GetMaterial(i);
+      UMaterialInstanceDynamic* DynamicMaterial = Cast<UMaterialInstanceDynamic>(OriginalMaterial);
+      if(!DynamicMaterial)
+      {
+        DynamicMaterial = UMaterialInstanceDynamic::Create(OriginalMaterial, NULL);
+        Mesh->SetMaterial(i, DynamicMaterial);
+      }
+
+      switch(TextureParam)
+      {
+        case cr::MaterialParameter::Tex_Diffuse:
+          DynamicMaterial->SetTextureParameterValue("BaseColor", Texture);
+          DynamicMaterial->SetTextureParameterValue("Difuse", Texture);
+          DynamicMaterial->SetTextureParameterValue("Difuse 2", Texture);
+          DynamicMaterial->SetTextureParameterValue("Difuse 3", Texture);
+          DynamicMaterial->SetTextureParameterValue("Difuse 4", Texture);
+          break;
+        case cr::MaterialParameter::Tex_Normal:
+          DynamicMaterial->SetTextureParameterValue("Normal", Texture);
+          DynamicMaterial->SetTextureParameterValue("Normal 2", Texture);
+          DynamicMaterial->SetTextureParameterValue("Normal 3", Texture);
+          DynamicMaterial->SetTextureParameterValue("Normal 4", Texture);
+          break;
+        case cr::MaterialParameter::Tex_Emissive:
+          DynamicMaterial->SetTextureParameterValue("Emissive", Texture);
+          break;
+        case cr::MaterialParameter::Tex_Ao_Roughness_Metallic_Emissive:
+          DynamicMaterial->SetTextureParameterValue("AO / Roughness / Metallic / Emissive", Texture);
+          DynamicMaterial->SetTextureParameterValue("ORMH", Texture);
+          DynamicMaterial->SetTextureParameterValue("ORMH 2", Texture);
+          DynamicMaterial->SetTextureParameterValue("ORMH 3", Texture);
+          DynamicMaterial->SetTextureParameterValue("ORMH 4", Texture);
+          break;
+      }
+    }
+  }
+}
+
+void ACarlaGameModeBase::Tick(float DeltaSeconds)
+{
+  TRACE_CPUPROFILER_EVENT_SCOPE(ACarlaGameModeBase::Tick);
+  Super::Tick(DeltaSeconds);
+
+  /// @todo Recorder should not tick here, FCarlaEngine should do it.
+  if (Recorder)
+  {
+    Recorder->Tick(DeltaSeconds);
+  }
+}
+
+void ACarlaGameModeBase::OnLevelAddedToWorld(ULevel* InLevel, UWorld* InWorld)
+{
+  if (InLevel == nullptr || InWorld != GetWorld())
+  {
+    return;
+  }
+  ATagger::TagActorsInLevel(*InLevel, true);
+
+  // A converted map's baked TrafficLightManager can stream in later as a
+  // duplicate of the persistent-level manager installed at BeginPlay (see
+  // GetTrafficLightManager); cull it before anything can find it.
+  TArray<AActor*> DuplicateManagers;
+  for (AActor* Actor : InLevel->Actors)
+  {
+    if (Actor != nullptr && Actor != TrafficLightManager &&
+        Actor->IsA<ATrafficLightManager>())
+    {
+      DuplicateManagers.Add(Actor);
+    }
+  }
+  for (AActor* Actor : DuplicateManagers)
+  {
+    UE_LOG(LogCarla, Log, TEXT("Destroying streamed-in duplicate TrafficLightManager %s"),
+        *Actor->GetName());
+    Actor->Destroy();
+  }
+}
+
+void ACarlaGameModeBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+  FWorldDelegates::LevelAddedToWorld.RemoveAll(this);
+  FCarlaStaticDelegates::OnEpisodeSettingsChange.Remove(OnEpisodeSettingsChangeHandle);
+
+  Episode->EndPlay();
+  GameInstance->NotifyEndEpisode();
+
+  Super::EndPlay(EndPlayReason);
+
+  if ((CarlaSettingsDelegate != nullptr) && (EndPlayReason != EEndPlayReason::EndPlayInEditor))
+  {
+    CarlaSettingsDelegate->Reset();
+  }
+}
+
+void ACarlaGameModeBase::SpawnActorFactories()
+{
+  auto *World = GetWorld();
+  check(World != nullptr);
+
+  for (auto &FactoryClass : ActorFactories)
+  {
+    if (FactoryClass != nullptr)
+    {
+      auto *Factory = World->SpawnActor<ACarlaActorFactory>(FactoryClass);
+      if (Factory != nullptr)
+      {
+        Episode->RegisterActorFactory(*Factory);
+        ActorFactoryInstances.Add(Factory);
+      }
+      else
+      {
+        UE_LOG(LogCarla, Error, TEXT("Failed to spawn actor spawner"));
+      }
+    }
+  }
+}
+
+void ACarlaGameModeBase::StoreSpawnPoints()
+{
+  for (TActorIterator<AVehicleSpawnPoint> It(GetWorld()); It; ++It)
+  {
+    SpawnPointsTransforms.Add(It->GetActorTransform());
+  }
+
+  if(SpawnPointsTransforms.Num() == 0)
+  {
+    GenerateSpawnPoints();
+  }
+
+  UE_LOG(LogCarla, Log, TEXT("There are %d SpawnPoints in the map"), SpawnPointsTransforms.Num());
+}
+
+void ACarlaGameModeBase::GenerateSpawnPoints()
+{
+  UE_LOG(LogCarla, Log, TEXT("Generating SpawnPoints ..."));
+  std::vector<std::pair<carla::road::element::Waypoint, carla::road::element::Waypoint>> Topology = Map->GenerateTopology();
+  UWorld* World = GetWorld();
+  for(auto& Pair : Topology)
+  {
+    carla::geom::Transform CarlaTransform = Map->ComputeTransform(Pair.first);
+    FTransform Transform(CarlaTransform);
+    Transform.AddToTranslation(FVector(0.f, 0.f, 50.0f));
+    SpawnPointsTransforms.Add(Transform);
+  }
+}
+
+void ACarlaGameModeBase::ParseOpenDrive()
+{
+  std::string opendrive_xml = carla::rpc::FromLongFString(UOpenDrive::GetXODR(GetWorld()));
+  Map = carla::opendrive::OpenDriveParser::Load(opendrive_xml);
+  if (!Map.has_value()) {
+    UE_LOG(LogCarla, Error, TEXT("Invalid Map"));
+  }
+  else
+  {
+    Episode->MapGeoProjection = Map->GetGeoProjection();
+  }
+}
+
+ATrafficLightManager* ACarlaGameModeBase::GetTrafficLightManager()
+{
+  if (!TrafficLightManager)
+  {
+    UWorld* World = GetWorld();
+    AActor* TrafficLightManagerActor = UGameplayStatics::GetActorOfClass(World, ATrafficLightManager::StaticClass());
+    ATrafficLightManager* BakedInStreamedCell = nullptr;
+    if (TrafficLightManagerActor != nullptr &&
+        World->GetWorldPartition() != nullptr &&
+        TrafficLightManagerActor->GetLevel() != World->PersistentLevel)
+    {
+      // Converted World Partition maps carry the manager over as a
+      // spatially-loaded external actor inside a streamed cell; anything it
+      // owns dies with the cell. Replace it with a persistent-level manager
+      // that inherits the baked manager's model configuration.
+      BakedInStreamedCell = Cast<ATrafficLightManager>(TrafficLightManagerActor);
+      TrafficLightManagerActor = nullptr;
+    }
+    if(TrafficLightManagerActor == nullptr)
+    {
+      FActorSpawnParameters SpawnParams;
+      SpawnParams.OverrideLevel = GetULevelFromName("TrafficLights");
+      TrafficLightManager = World->SpawnActor<ATrafficLightManager>(SpawnParams);
+      if (BakedInStreamedCell != nullptr && TrafficLightManager != nullptr)
+      {
+        TrafficLightManager->AdoptModelConfigurationFrom(*BakedInStreamedCell);
+        BakedInStreamedCell->Destroy();
+      }
+    }
+    else
+    {
+      TrafficLightManager = Cast<ATrafficLightManager>(TrafficLightManagerActor);
+    }
+  }
+  return TrafficLightManager;
+}
+
+void ACarlaGameModeBase::CheckForEmptyMeshes()
+{
+  TArray<AActor*> WorldActors;
+  UGameplayStatics::GetAllActorsOfClass(GetWorld(), AStaticMeshActor::StaticClass(), WorldActors);
+
+  for (AActor *Actor : WorldActors)
+  {
+    AStaticMeshActor *MeshActor = CastChecked<AStaticMeshActor>(Actor);
+    if (MeshActor->GetStaticMeshComponent()->GetStaticMesh() == NULL)
+    {
+      UE_LOG(LogTemp, Error, TEXT("The object : %s has no mesh"), *MeshActor->GetFullName());
+    }
+  }
+}
+
+void ACarlaGameModeBase::EnableOverlapEvents()
+{
+  TArray<AActor*> WorldActors;
+  UGameplayStatics::GetAllActorsOfClass(GetWorld(), AStaticMeshActor::StaticClass(), WorldActors);
+
+  for(AActor *Actor : WorldActors)
+  {
+    AStaticMeshActor *MeshActor = CastChecked<AStaticMeshActor>(Actor);
+    if(MeshActor->GetStaticMeshComponent()->GetStaticMesh() != NULL)
+    {
+      auto MeshTag = ATagger::GetTagOfTaggedComponent(*MeshActor->GetStaticMeshComponent());
+      namespace crp = carla::rpc;
+      if (MeshTag != crp::CityObjectLabel::Roads && 
+          MeshTag != crp::CityObjectLabel::Sidewalks && 
+          MeshTag != crp::CityObjectLabel::RoadLines && 
+          MeshTag != crp::CityObjectLabel::Ground &&
+          MeshTag != crp::CityObjectLabel::Terrain &&
+          MeshActor->GetStaticMeshComponent()->GetGenerateOverlapEvents() == false)
+      {
+        MeshActor->GetStaticMeshComponent()->SetGenerateOverlapEvents(true);
+      }
+    }
+  }
+}
+
+void ACarlaGameModeBase::DebugShowSignals(bool enable)
+{
+
+  auto World = GetWorld();
+  check(World != nullptr);
+
+  if(!Map)
+  {
+    return;
+  }
+
+  if(!enable)
+  {
+    UKismetSystemLibrary::FlushDebugStrings(World);
+    UKismetSystemLibrary::FlushPersistentDebugLines(World);
+    return;
+  }
+
+  //const std::unordered_map<carla::road::SignId, std::unique_ptr<carla::road::Signal>>
+  const auto& Signals = Map->GetSignals();
+  const auto& Controllers = Map->GetControllers();
+
+  for(const auto& Signal : Signals) {
+    const auto& ODSignal = Signal.second;
+    const FTransform Transform = ODSignal->GetTransform();
+    const FVector Location = Transform.GetLocation();
+    const FQuat Rotation = Transform.GetRotation();
+    const FVector Up = Rotation.GetUpVector();
+    DrawDebugSphere(
+      World,
+      Location,
+      50.0f,
+      10,
+      FColor(0, 255, 0),
+      true
+    );
+  }
+
+  TArray<const cre::RoadInfoSignal*> References;
+  auto waypoints = Map->GenerateWaypointsOnRoadEntries();
+  std::unordered_set<cr::RoadId> ExploredRoads;
+  for (auto & waypoint : waypoints)
+  {
+    // Check if we already explored this road
+    if (ExploredRoads.count(waypoint.road_id) > 0)
+    {
+      continue;
+    }
+    ExploredRoads.insert(waypoint.road_id);
+
+    // Multiple times for same road (performance impact, not in behavior)
+    auto SignalReferences = Map->GetLane(waypoint).
+        GetRoad()->GetInfos<cre::RoadInfoSignal>();
+    for (auto *SignalReference : SignalReferences)
+    {
+      References.Add(SignalReference);
+    }
+  }
+  for (auto& Reference : References)
+  {
+    auto RoadId = Reference->GetRoadId();
+    const auto* SignalReference = Reference;
+    const FTransform SignalTransform = SignalReference->GetSignal()->GetTransform();
+    for(auto &validity : SignalReference->GetValidities())
+    {
+      for(auto lane : carla::geom::Math::GenerateRange(validity._from_lane, validity._to_lane))
+      {
+        if(lane == 0)
+          continue;
+
+        auto signal_waypoint = Map->GetWaypoint(
+            RoadId, lane, SignalReference->GetS()).value();
+
+        if(Map->GetLane(signal_waypoint).GetType() != cr::Lane::LaneType::Driving)
+          continue;
+
+        FTransform ReferenceTransform = Map->ComputeTransform(signal_waypoint);
+
+        DrawDebugSphere(
+            World,
+            ReferenceTransform.GetLocation(),
+            50.0f,
+            10,
+            FColor(0, 0, 255),
+            true
+        );
+
+        DrawDebugLine(
+            World,
+            ReferenceTransform.GetLocation(),
+            SignalTransform.GetLocation(),
+            FColor(0, 0, 255),
+            true
+        );
+      }
+    }
+  }
+
+}
+
+TArray<FBoundingBox> ACarlaGameModeBase::GetAllBBsOfLevel(uint8 TagQueried) const
+{
+  UWorld* World = GetWorld();
+
+  // Get all actors of the level
+  TArray<AActor*> FoundActors;
+  UGameplayStatics::GetAllActorsOfClass(World, AActor::StaticClass(), FoundActors);
+
+  TArray<FBoundingBox> BoundingBoxes;
+  BoundingBoxes = UBoundingBoxCalculator::GetBoundingBoxOfActors(FoundActors, TagQueried);
+
+  return BoundingBoxes;
+}
+
+void ACarlaGameModeBase::RegisterEnvironmentObjects()
+{
+  // Get all actors of the level
+  TArray<AActor*> FoundActors;
+  UGameplayStatics::GetAllActorsOfClass(GetWorld(), AActor::StaticClass(), FoundActors);
+  ObjectRegister->RegisterObjects(FoundActors);
+}
+
+void ACarlaGameModeBase::EnableEnvironmentObjects(
+  const TSet<uint64>& EnvObjectIds,
+  bool Enable)
+{
+  ObjectRegister->EnableEnvironmentObjects(EnvObjectIds, Enable);
+}
+
+void ACarlaGameModeBase::LoadMapLayer(int32 MapLayers)
+{
+  const UWorld* World = GetWorld();
+  UGameplayStatics::FlushLevelStreaming(World);
+
+  TArray<FName> LevelsToLoad;
+  ConvertMapLayerMaskToMapNames(MapLayers, LevelsToLoad);
+
+  FLatentActionInfo LatentInfo;
+  LatentInfo.CallbackTarget = this;
+  LatentInfo.ExecutionFunction = "OnLoadStreamLevel";
+  LatentInfo.Linkage = 0;
+  LatentInfo.UUID = LatentInfoUUID;
+
+  PendingLevelsToLoad = LevelsToLoad.Num();
+
+  for(FName& LevelName : LevelsToLoad)
+  {
+    LatentInfoUUID++;
+    UGameplayStatics::LoadStreamLevel(World, LevelName, true, true, LatentInfo);
+    LatentInfo.UUID = LatentInfoUUID;
+    UGameplayStatics::FlushLevelStreaming(World);
+  }
+}
+
+void ACarlaGameModeBase::UnLoadMapLayer(int32 MapLayers)
+{
+  const UWorld* World = GetWorld();
+
+  TArray<FName> LevelsToUnLoad;
+  ConvertMapLayerMaskToMapNames(MapLayers, LevelsToUnLoad);
+
+  FLatentActionInfo LatentInfo;
+  LatentInfo.CallbackTarget = this;
+  LatentInfo.ExecutionFunction = "OnUnloadStreamLevel";
+  LatentInfo.UUID = LatentInfoUUID;
+  LatentInfo.Linkage = 0;
+
+  PendingLevelsToUnLoad = LevelsToUnLoad.Num();
+
+  for(FName& LevelName : LevelsToUnLoad)
+  {
+    LatentInfoUUID++;
+    UGameplayStatics::UnloadStreamLevel(World, LevelName, LatentInfo, false);
+    LatentInfo.UUID = LatentInfoUUID;
+    UGameplayStatics::FlushLevelStreaming(World);
+  }
+
+}
+
+void ACarlaGameModeBase::ConvertMapLayerMaskToMapNames(int32 MapLayer, TArray<FName>& OutLevelNames)
+{
+  UWorld* World = GetWorld();
+  const TArray <ULevelStreaming*> Levels = World->GetStreamingLevels();
+  TArray<FString> LayersToLoad;
+
+  // Get all the requested layers
+  int32 LayerMask = 1;
+  int32 AllLayersMask = static_cast<crp::MapLayerType>(crp::MapLayer::All);
+
+  while(LayerMask > 0)
+  {
+    // Convert enum to FString
+    FString LayerName = UTF8_TO_TCHAR(MapLayerToString(static_cast<crp::MapLayer>(LayerMask)).c_str());
+    bool included = static_cast<crp::MapLayerType>(MapLayer) & LayerMask;
+    if(included)
+    {
+      LayersToLoad.Emplace(LayerName);
+    }
+    LayerMask = (LayerMask << 1) & AllLayersMask;
+  }
+
+  // Get all the requested level maps
+  for(ULevelStreaming* Level : Levels)
+  {
+    TArray<FString> StringArray;
+    FString FullSubMapName = Level->GetWorldAssetPackageFName().ToString();
+    // Discard full path, we just need the umap name
+    FullSubMapName.ParseIntoArray(StringArray, TEXT("/"), false);
+    FString SubMapName = StringArray[StringArray.Num() - 1];
+    for(FString LayerName : LayersToLoad)
+    {
+      if(SubMapName.Contains(LayerName))
+      {
+        OutLevelNames.Emplace(FName(*SubMapName));
+        break;
+      }
+    }
+  }
+
+}
+
+ULevel* ACarlaGameModeBase::GetULevelFromName(FString LevelName)
+{
+  ULevel* OutLevel = nullptr;
+  UWorld* World = GetWorld();
+  const TArray <ULevelStreaming*> Levels = World->GetStreamingLevels();
+
+  for(ULevelStreaming* Level : Levels)
+  {
+    FString FullSubMapName = Level->GetWorldAssetPackageFName().ToString();
+    if(FullSubMapName.Contains(LevelName))
+    {
+      OutLevel = Level->GetLoadedLevel();
+      if(!OutLevel)
+      {
+        UE_LOG(LogCarla, Warning, TEXT("%s has not been loaded"), *LevelName);
+      }
+      break;
+    }
+  }
+
+  // With no matching sublevel the callers used to pass OverrideLevel=nullptr,
+  // and UWorld::SpawnActor then falls back to the OWNER's level. On converted
+  // World Partition maps the owner (the baked TrafficLightManager) lives in a
+  // streamed cell, so every runtime signal landed in that one cell and was
+  // silently torn down (no AActor::Destroy, no OnDestroyed) whenever the cell
+  // streamed out. Fall back to the persistent level instead so runtime-spawned
+  // managers, groups and signals always survive streaming.
+  if (OutLevel == nullptr)
+  {
+    OutLevel = World->PersistentLevel;
+  }
+
+  return OutLevel;
+}
+
+void ACarlaGameModeBase::OnLoadStreamLevel()
+{
+  PendingLevelsToLoad--;
+
+  // Register new actors and tag them
+  if(ReadyToRegisterObjects && PendingLevelsToLoad == 0)
+  {
+    RegisterEnvironmentObjects();
+    ATagger::TagActorsInLevel(*GetWorld(), true);
+  }
+}
+
+void ACarlaGameModeBase::OnUnloadStreamLevel()
+{
+  PendingLevelsToUnLoad--;
+  // Update stored registered objects (discarding the deleted objects)
+  if(ReadyToRegisterObjects && PendingLevelsToUnLoad == 0)
+  {
+    RegisterEnvironmentObjects();
+  }
+}
+
+void ACarlaGameModeBase::OnEpisodeSettingsChanged(const FEpisodeSettings &Settings)
+{
+  CarlaSettingsDelegate->SetAllActorsDrawDistance(GetWorld(), Settings.MaxCullingDistance);
+}

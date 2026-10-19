@@ -1,0 +1,4 @@
+_out/
+cache
+*.json
+*.gif

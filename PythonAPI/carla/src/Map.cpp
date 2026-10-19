@@ -1,0 +1,475 @@
+// Copyright (c) 2026 Computer Vision Center (CVC) at the Universitat Autonoma
+// de Barcelona (UAB).
+//
+// This work is licensed under the terms of the MIT license.
+// For a copy, see <https://opensource.org/licenses/MIT>.
+
+#include <PythonAPI.h>
+
+#include <carla/geom/GeoProjectionsParams.h>
+#include <carla/client/Lane.h>
+#include <carla/client/LaneSection.h>
+#include <carla/client/Road.h>
+
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable:4583)
+#pragma warning(disable:4582)
+#include <boost/variant2/variant.hpp>
+#pragma warning(pop)
+#else
+#include <boost/variant2/variant.hpp>
+#endif
+
+namespace carla {
+namespace client {
+
+  std::ostream &operator<<(std::ostream &out, const Road &road) {
+    out << "Road(id=" << std::to_string(road.GetId()) << ')';
+    return out;
+  }
+
+  std::ostream &operator<<(std::ostream &out, const LaneSection &section) {
+    out << "LaneSection(road_id=" << std::to_string(section.GetRoadId())
+        << ", id=" << std::to_string(section.GetId()) << ')';
+    return out;
+  }
+
+  std::ostream &operator<<(std::ostream &out, const Lane &lane) {
+    out << "Lane(road_id=" << std::to_string(lane.GetRoadId())
+        << ", section_id=" << std::to_string(lane.GetSectionId())
+        << ", id=" << std::to_string(lane.GetId()) << ')';
+    return out;
+  }
+
+} // namespace client
+} // namespace carla
+
+static void SaveOpenDriveToDisk(const carla::client::Map &self, std::string path) {
+  carla::PythonUtil::ReleaseGIL unlock;
+  if (path.empty()) {
+    path = self.GetName();
+  }
+  carla::FileSystem::ValidateFilePath(path, ".xodr");
+  std::ofstream out(path);
+  out << self.GetOpenDrive() << std::endl;
+}
+
+static auto GetTopology(const carla::client::Map &self) {
+  namespace py = boost::python;
+  auto topology = self.GetTopology();
+  py::list result;
+  for (auto &&pair : topology) {
+    result.append(py::make_tuple(pair.first, pair.second));
+  }
+  return result;
+}
+
+static auto GetJunctionWaypoints(const carla::client::Junction &self, const carla::road::Lane::LaneType lane_type) {
+  namespace py = boost::python;
+  auto topology = self.GetWaypoints(lane_type);
+  py::list result;
+  for (auto &pair : topology) {
+    result.append(py::make_tuple(pair.first, pair.second));
+  }
+  return result;
+}
+
+static auto GetLaneValidities(const carla::client::Landmark &self){
+  namespace py = boost::python;
+  auto &validities = self.GetValidities();
+  py::list result;
+  for(auto &validity : validities) {
+    result.append(py::make_tuple(validity._from_lane, validity._to_lane));
+  }
+  return result;
+}
+
+static carla::geom::GeoLocation GetGeoReference(const carla::client::Map &self) {
+  return self.GetGeoReference();
+}
+
+static auto GetGeoProjection(const carla::client::Map &self) {
+  const auto &variant = self.GetGeoProjection().params;
+
+  return boost::variant2::visit([](const auto &params) -> boost::python::object {
+    return boost::python::object(params);}, variant);
+}
+
+static carla::geom::Location ToTransform(
+    const carla::client::Map &self,
+    const carla::geom::GeoLocation& geo_location) {
+  return self.GetGeoProjection().GeoLocationToTransform(geo_location);
+}
+
+static carla::geom::Location ToTransformTM(
+  const carla::client::Map &self,
+  const carla::geom::GeoLocation& geo_location,
+  const carla::geom::TransverseMercatorParams& params) {
+return self.GetGeoProjection().GeoLocationToTransformTransverseMercator(geo_location, params);
+}
+
+static carla::geom::Location ToTransformUTM(
+  const carla::client::Map &self,
+  const carla::geom::GeoLocation& geo_location,
+  const carla::geom::UniversalTransverseMercatorParams& params) {
+return self.GetGeoProjection().GeoLocationToTransformUniversalTransverseMercator(geo_location, params);
+}
+
+static carla::geom::Location ToTransformWebMerc(
+  const carla::client::Map &self,
+  const carla::geom::GeoLocation& geo_location,
+  const carla::geom::WebMercatorParams& params) {
+return self.GetGeoProjection().GeoLocationToTransformWebMercator(geo_location, params);
+}
+
+static carla::geom::Location ToTransformLCC2SP(
+  const carla::client::Map &self,
+  const carla::geom::GeoLocation& geo_location,
+  const carla::geom::LambertConformalConicParams& params) {
+return self.GetGeoProjection().GeoLocationToTransformLambertConformalConic(geo_location, params);
+}
+
+static carla::geom::GeoLocation ToGeolocation(
+  const carla::client::Map &self,
+  const carla::geom::Location &location) {
+return self.GetGeoProjection().TransformToGeoLocation(location);
+}
+
+static carla::geom::GeoLocation ToGeolocationTM(
+    const carla::client::Map &self,
+    const carla::geom::Location &location,
+    const carla::geom::TransverseMercatorParams& params) {
+  return self.GetGeoProjection().TransformToGeoLocationTransverseMercator(location, params);
+}
+
+static carla::geom::GeoLocation ToGeolocationUTM(
+  const carla::client::Map &self,
+  const carla::geom::Location &location,
+  const carla::geom::UniversalTransverseMercatorParams& params) {
+  return self.GetGeoProjection().TransformToGeoLocationUniversalTransverseMercator(location, params);
+}
+
+static carla::geom::GeoLocation ToGeolocationWebMerc(
+  const carla::client::Map &self,
+  const carla::geom::Location &location,
+  const carla::geom::WebMercatorParams& params) {
+  return self.GetGeoProjection().TransformToGeoLocationWebMercator(location, params);
+}
+
+static carla::geom::GeoLocation ToGeolocationLCC2SP(
+  const carla::client::Map &self,
+  const carla::geom::Location &location,
+  const carla::geom::LambertConformalConicParams& params) {
+  return self.GetGeoProjection().TransformToGeoLocationLambertConformalConic(location, params);
+}
+
+void export_map() {
+  using namespace boost::python;
+  namespace cc = carla::client;
+  namespace cr = carla::road;
+  namespace cg = carla::geom;
+  namespace cre = carla::road::element;
+
+  // ===========================================================================
+  // -- Enums ------------------------------------------------------------------
+  // ===========================================================================
+
+  enum_<cr::Lane::LaneType>("LaneType")
+    .value("NONE", cr::Lane::LaneType::None) // None is reserved in Python3
+    .value("Driving", cr::Lane::LaneType::Driving)
+    .value("Stop", cr::Lane::LaneType::Stop)
+    .value("Shoulder", cr::Lane::LaneType::Shoulder)
+    .value("Biking", cr::Lane::LaneType::Biking)
+    .value("Sidewalk", cr::Lane::LaneType::Sidewalk)
+    .value("Border", cr::Lane::LaneType::Border)
+    .value("Restricted", cr::Lane::LaneType::Restricted)
+    .value("Parking", cr::Lane::LaneType::Parking)
+    .value("Bidirectional", cr::Lane::LaneType::Bidirectional)
+    .value("Median", cr::Lane::LaneType::Median)
+    .value("Special1", cr::Lane::LaneType::Special1)
+    .value("Special2", cr::Lane::LaneType::Special2)
+    .value("Special3", cr::Lane::LaneType::Special3)
+    .value("RoadWorks", cr::Lane::LaneType::RoadWorks)
+    .value("Tram", cr::Lane::LaneType::Tram)
+    .value("Rail", cr::Lane::LaneType::Rail)
+    .value("Entry", cr::Lane::LaneType::Entry)
+    .value("Exit", cr::Lane::LaneType::Exit)
+    .value("OffRamp", cr::Lane::LaneType::OffRamp)
+    .value("OnRamp", cr::Lane::LaneType::OnRamp)
+    .value("Any", cr::Lane::LaneType::Any)
+  ;
+
+  enum_<cre::LaneMarking::LaneChange>("LaneChange")
+    .value("NONE", cre::LaneMarking::LaneChange::None)
+    .value("Right", cre::LaneMarking::LaneChange::Right)
+    .value("Left", cre::LaneMarking::LaneChange::Left)
+    .value("Both", cre::LaneMarking::LaneChange::Both)
+  ;
+
+  enum_<cre::LaneMarking::Color>("LaneMarkingColor")
+    .value("Standard", cre::LaneMarking::Color::Standard)
+    .value("Blue", cre::LaneMarking::Color::Blue)
+    .value("Green", cre::LaneMarking::Color::Green)
+    .value("Red", cre::LaneMarking::Color::Red)
+    .value("White", cre::LaneMarking::Color::White)
+    .value("Yellow", cre::LaneMarking::Color::Yellow)
+    .value("Other", cre::LaneMarking::Color::Other)
+  ;
+
+  enum_<cre::LaneMarking::Type>("LaneMarkingType")
+    .value("NONE", cre::LaneMarking::Type::None)
+    .value("Other", cre::LaneMarking::Type::Other)
+    .value("Broken", cre::LaneMarking::Type::Broken)
+    .value("Solid", cre::LaneMarking::Type::Solid)
+    .value("SolidSolid", cre::LaneMarking::Type::SolidSolid)
+    .value("SolidBroken", cre::LaneMarking::Type::SolidBroken)
+    .value("BrokenSolid", cre::LaneMarking::Type::BrokenSolid)
+    .value("BrokenBroken", cre::LaneMarking::Type::BrokenBroken)
+    .value("BottsDots", cre::LaneMarking::Type::BottsDots)
+    .value("Grass", cre::LaneMarking::Type::Grass)
+    .value("Curb", cre::LaneMarking::Type::Curb)
+  ;
+
+  enum_<cr::SignalOrientation>("LandmarkOrientation")
+    .value("Positive", cr::SignalOrientation::Positive)
+    .value("Negative", cr::SignalOrientation::Negative)
+    .value("Both", cr::SignalOrientation::Both)
+  ;
+  // ===========================================================================
+  // -- Map --------------------------------------------------------------------
+  // ===========================================================================
+
+  class_<cc::Map, boost::noncopyable, std::shared_ptr<cc::Map>>("Map", no_init)
+    .def(init<std::string, std::string>((arg("name"), arg("xodr_content"))))
+    .add_property("name", CALL_RETURNING_COPY(cc::Map, GetName))
+    .def("get_spawn_points", CALL_RETURNING_LIST(cc::Map, GetRecommendedSpawnPoints))
+    .def("get_waypoint", &cc::Map::GetWaypoint, (arg("location"), arg("project_to_road")=true, arg("lane_type")=cr::Lane::LaneType::Driving))
+    .def("get_waypoint_xodr", &cc::Map::GetWaypointXODR, (arg("road_id"), arg("lane_id"), arg("s")))
+    .def("get_topology", &GetTopology)
+    .def("generate_waypoints", CALL_RETURNING_LIST_1(cc::Map, GenerateWaypoints, double), (args("distance")))
+    .def("transform_to_geolocation", &ToGeolocation, (arg("location")))
+    .def("transform_to_geolocation", &ToGeolocationTM, (arg("location"), arg("projection")))
+    .def("transform_to_geolocation", &ToGeolocationUTM, (arg("location"), arg("projection")))
+    .def("transform_to_geolocation", &ToGeolocationWebMerc, (arg("location"), arg("projection")))
+    .def("transform_to_geolocation", &ToGeolocationLCC2SP, (arg("location"), arg("projection")))
+    .def("geolocation_to_transform", &ToTransform, (arg("geo_location")))
+    .def("geolocation_to_transform", &ToTransformTM, (arg("geo_location"), arg("projection")))
+    .def("geolocation_to_transform", &ToTransformUTM, (arg("geo_location"), arg("projection")))
+    .def("geolocation_to_transform", &ToTransformWebMerc, (arg("geo_location"), arg("projection")))
+    .def("geolocation_to_transform", &ToTransformLCC2SP, (arg("geo_location"), arg("projection")))
+    .def("get_georeference", &GetGeoReference)
+    .def("get_geoprojection", &GetGeoProjection)
+    .def("to_opendrive", CALL_RETURNING_COPY(cc::Map, GetOpenDrive))
+    .def("save_to_disk", &SaveOpenDriveToDisk, (arg("path")=""))
+    .def("get_roads", CALL_RETURNING_LIST(cc::Map, GetRoads))
+    .def("get_road", &cc::Map::GetRoad, (arg("road_id")))
+    .def("get_lane_section", &cc::Map::GetLaneSection, (arg("road_id"), arg("section_id")))
+    .def("get_lane", &cc::Map::GetLane, (arg("road_id"), arg("section_id"), arg("lane_id")))
+    .def("get_junctions", CALL_RETURNING_LIST(cc::Map, GetJunctions))
+    .def("get_junction_by_id", &cc::Map::GetJunctionById, (arg("junction_id")))
+    .def("get_crosswalks", CALL_RETURNING_LIST(cc::Map, GetAllCrosswalkZones))
+    .def("get_all_landmarks", CALL_RETURNING_LIST(cc::Map, GetAllLandmarks))
+    .def("get_all_landmarks_from_id", CALL_RETURNING_LIST_1(cc::Map, GetLandmarksFromId, std::string), (args("opendrive_id")))
+    .def("get_all_landmarks_of_type", CALL_RETURNING_LIST_1(cc::Map, GetAllLandmarksOfType, std::string), (args("type")))
+    .def("get_landmark_group", CALL_RETURNING_LIST_1(cc::Map, GetLandmarkGroup, cc::Landmark), args("landmark"))
+    .def("cook_in_memory_map", &cc::Map::CookInMemoryMap, (arg("path")=""))
+    .def(self_ns::str(self_ns::self))
+  ;
+
+  // ===========================================================================
+  // -- Helper objects ---------------------------------------------------------
+  // ===========================================================================
+
+  class_<cre::LaneMarking>("LaneMarking", no_init)
+    .add_property("type", &cre::LaneMarking::type)
+    .add_property("color", &cre::LaneMarking::color)
+    .add_property("lane_change", &cre::LaneMarking::lane_change)
+    .add_property("width", &cre::LaneMarking::width)
+  ;
+
+  class_<cc::Road, boost::noncopyable, std::shared_ptr<cc::Road>>("Road", no_init)
+    .add_property("id", &cc::Road::GetId)
+    .add_property("name", CALL_RETURNING_COPY(cc::Road, GetName))
+    .add_property("length", &cc::Road::GetLength)
+    .add_property("is_junction", &cc::Road::IsJunction)
+    .add_property("junction_id", &cc::Road::GetJunctionId)
+    .add_property("is_rht", &cc::Road::IsRHT)
+    .add_property("successor_id", &cc::Road::GetSuccessorId)
+    .add_property("predecessor_id", &cc::Road::GetPredecessorId)
+    .def("get_next_road", CALL_RETURNING_LIST(cc::Road, GetNextRoads))
+    .def("get_previous_road", CALL_RETURNING_LIST(cc::Road, GetPreviousRoads))
+    .def("get_lanes", CALL_RETURNING_LIST_2(cc::Road, GetLanes, double, cr::Lane::LaneType),
+        (arg("s"), arg("lane_type")=cr::Lane::LaneType::Driving))
+    .def("get_lane", &cc::Road::GetLane, (arg("section_id"), arg("lane_id")))
+    .def("get_lane_at", &cc::Road::GetLaneAt, (arg("s"), arg("lane_id")))
+    .def("get_sections", CALL_RETURNING_LIST(cc::Road, GetSections))
+    .def("get_section", &cc::Road::GetSection, (arg("section_id")))
+    .def("get_section_at", &cc::Road::GetSectionAt, (arg("s")))
+    .def("get_junction", &cc::Road::GetJunction)
+    .def("get_transform_at", &cc::Road::GetTransformAt, (arg("s")))
+    .def("get_waypoints_at", CALL_RETURNING_LIST_2(cc::Road, GetWaypointsAt, double, cr::Lane::LaneType),
+        (arg("s"), arg("lane_type")=cr::Lane::LaneType::Driving))
+    .def("get_waypoints", CALL_RETURNING_LIST_2(cc::Road, GetWaypoints, double, cr::Lane::LaneType),
+        (arg("distance"), arg("lane_type")=cr::Lane::LaneType::Driving))
+    .def("__eq__", &cc::Road::operator==)
+    .def("__ne__", &cc::Road::operator!=)
+    .def("__hash__", &cc::Road::GetId)
+    .def(self_ns::str(self_ns::self))
+  ;
+
+  class_<cc::LaneSection, boost::noncopyable, std::shared_ptr<cc::LaneSection>>("LaneSection", no_init)
+    .add_property("id", &cc::LaneSection::GetId)
+    .add_property("road_id", &cc::LaneSection::GetRoadId)
+    .add_property("s_start", &cc::LaneSection::GetDistance)
+    .add_property("length", &cc::LaneSection::GetLength)
+    .def("get_road", &cc::LaneSection::GetRoad)
+    .def("get_lanes", CALL_RETURNING_LIST_1(cc::LaneSection, GetLanes, cr::Lane::LaneType),
+        (arg("lane_type")=cr::Lane::LaneType::Driving))
+    .def("get_lane", &cc::LaneSection::GetLane, (arg("lane_id")))
+    .def("contains_lane", &cc::LaneSection::ContainsLane, (arg("lane_id")))
+    .def("get_next_section", &cc::LaneSection::GetNextSection)
+    .def("get_previous_section", &cc::LaneSection::GetPreviousSection)
+    .def("__eq__", &cc::LaneSection::operator==)
+    .def("__ne__", &cc::LaneSection::operator!=)
+    .def("__hash__", &cc::LaneSection::GetUniqueId)
+    .def(self_ns::str(self_ns::self))
+  ;
+
+  class_<cc::Lane, boost::noncopyable, std::shared_ptr<cc::Lane>>("Lane", no_init)
+    .add_property("id", &cc::Lane::GetId)
+    .add_property("road_id", &cc::Lane::GetRoadId)
+    .add_property("section_id", &cc::Lane::GetSectionId)
+    .add_property("type", &cc::Lane::GetType)
+    .add_property("length", &cc::Lane::GetLength)
+    .add_property("s_start", &cc::Lane::GetDistance)
+    .add_property("level", &cc::Lane::GetLevel)
+    .add_property("is_straight", &cc::Lane::IsStraight)
+    .add_property("is_positive_direction", &cc::Lane::IsPositiveDirection)
+    .def("get_road", &cc::Lane::GetRoad)
+    .def("get_section", &cc::Lane::GetSection)
+    .def("get_width", &cc::Lane::GetWidth, (arg("s")))
+    .def("get_transform", &cc::Lane::GetTransform, (arg("s")))
+    .def("get_right_lane", &cc::Lane::GetRightLane)
+    .def("get_left_lane", &cc::Lane::GetLeftLane)
+    .def("get_next_lane", CALL_RETURNING_LIST(cc::Lane, GetNextLanes))
+    .def("get_previous_lane", CALL_RETURNING_LIST(cc::Lane, GetPreviousLanes))
+    .def("get_waypoint", &cc::Lane::GetWaypoint, (arg("s")))
+    .def("get_waypoints", CALL_RETURNING_LIST_1(cc::Lane, GetWaypoints, double), (arg("distance")))
+    .def("__eq__", &cc::Lane::operator==)
+    .def("__ne__", &cc::Lane::operator!=)
+    .def("__hash__", &cc::Lane::GetUniqueId)
+    .def(self_ns::str(self_ns::self))
+  ;
+
+  class_<cc::Waypoint, boost::noncopyable, std::shared_ptr<cc::Waypoint>>("Waypoint", no_init)
+    .add_property("id", &cc::Waypoint::GetId)
+    .add_property("transform", CALL_RETURNING_COPY(cc::Waypoint, GetTransform))
+    .add_property("is_junction", &cc::Waypoint::IsJunction)
+    .add_property("lane_width", &cc::Waypoint::GetLaneWidth)
+    .add_property("road_id", &cc::Waypoint::GetRoadId)
+    .add_property("section_id", &cc::Waypoint::GetSectionId)
+    .add_property("lane_id", &cc::Waypoint::GetLaneId)
+    .add_property("s", &cc::Waypoint::GetDistance)
+    .add_property("junction_id", &cc::Waypoint::GetJunctionId)
+    .add_property("lane_change", &cc::Waypoint::GetLaneChange)
+    .add_property("lane_type", &cc::Waypoint::GetType)
+    .add_property("right_lane_marking", CALL_RETURNING_OPTIONAL(cc::Waypoint, GetRightLaneMarking))
+    .add_property("left_lane_marking", CALL_RETURNING_OPTIONAL(cc::Waypoint, GetLeftLaneMarking))
+    .add_property("is_rht", &cc::Waypoint::IsRHT)
+    .def("next", CALL_RETURNING_LIST_1(cc::Waypoint, GetNext, double), (args("distance")))
+    .def("previous", CALL_RETURNING_LIST_1(cc::Waypoint, GetPrevious, double), (args("distance")))
+    .def("next_until_lane_end", CALL_RETURNING_LIST_1(cc::Waypoint, GetNextUntilLaneEnd, double), (args("distance")))
+    .def("previous_until_lane_start", CALL_RETURNING_LIST_1(cc::Waypoint, GetPreviousUntilLaneStart, double), (args("distance")))
+    .def("get_right_lane", &cc::Waypoint::GetRight) // deprecated, returns a Waypoint
+    .def("get_left_lane", &cc::Waypoint::GetLeft)   // deprecated, returns a Waypoint
+    .def("get_right_waypoint", &cc::Waypoint::GetRight)
+    .def("get_left_waypoint", &cc::Waypoint::GetLeft)
+    .def("get_lane", &cc::Waypoint::GetLane)
+    .def("get_road", &cc::Waypoint::GetRoad)
+    .def("get_junction", &cc::Waypoint::GetJunction)
+    .def("get_landmarks", CALL_RETURNING_LIST_2(cc::Waypoint, GetAllLandmarksInDistance, double, bool), (arg("distance"), arg("stop_at_junction")=false))
+    .def("get_landmarks_of_type", CALL_RETURNING_LIST_3(cc::Waypoint, GetLandmarksOfTypeInDistance, double, std::string, bool), (arg("distance"), arg("type"), arg("stop_at_junction")=false))
+    .def(self_ns::str(self_ns::self))
+  ;
+
+  class_<cc::Junction, boost::noncopyable, std::shared_ptr<cc::Junction>>("Junction", no_init)
+    .add_property("id", &cc::Junction::GetId)
+    .add_property("bounding_box", &cc::Junction::GetBoundingBox)
+    .def("get_waypoints", &GetJunctionWaypoints)
+    .def("get_connecting_roads", CALL_RETURNING_LIST(cc::Junction, GetConnectingRoads))
+    .def("get_adjacent_roads", CALL_RETURNING_LIST(cc::Junction, GetAdjacentRoads))
+    .def("get_entry_lanes", CALL_RETURNING_LIST_1(cc::Junction, GetEntryLanes, cr::Lane::LaneType),
+        (arg("lane_type")=cr::Lane::LaneType::Driving))
+    .def("get_exit_lanes", CALL_RETURNING_LIST_1(cc::Junction, GetExitLanes, cr::Lane::LaneType),
+        (arg("lane_type")=cr::Lane::LaneType::Driving))
+    .def("get_entry_waypoints", CALL_RETURNING_LIST_1(cc::Junction, GetEntryWaypoints, cr::Lane::LaneType),
+        (arg("lane_type")=cr::Lane::LaneType::Driving))
+    .def("get_exit_waypoints", CALL_RETURNING_LIST_1(cc::Junction, GetExitWaypoints, cr::Lane::LaneType),
+        (arg("lane_type")=cr::Lane::LaneType::Driving))
+  ;
+
+  class_<cr::SignalType>("LandmarkType", no_init)
+    .add_static_property("Danger", &cr::SignalType::Danger)
+    .add_static_property("LanesMerging", &cr::SignalType::LanesMerging)
+    .add_static_property("CautionPedestrian", &cr::SignalType::CautionPedestrian)
+    .add_static_property("CautionBicycle", &cr::SignalType::CautionBicycle)
+    .add_static_property("LevelCrossing", &cr::SignalType::LevelCrossing)
+    .add_static_property("StopSign", &cr::SignalType::StopSign)
+    .add_static_property("YieldSign", &cr::SignalType::YieldSign)
+    .add_static_property("MandatoryTurnDirection", &cr::SignalType::MandatoryTurnDirection)
+    .add_static_property("MandatoryLeftRightDirection", &cr::SignalType::MandatoryLeftRightDirection)
+    .add_static_property("TwoChoiceTurnDirection", &cr::SignalType::TwoChoiceTurnDirection)
+    .add_static_property("Roundabout", &cr::SignalType::Roundabout)
+    .add_static_property("PassRightLeft", &cr::SignalType::PassRightLeft)
+    .add_static_property("AccessForbidden", &cr::SignalType::AccessForbidden)
+    .add_static_property("AccessForbiddenMotorvehicles", &cr::SignalType::AccessForbiddenMotorvehicles)
+    .add_static_property("AccessForbiddenTrucks", &cr::SignalType::AccessForbiddenTrucks)
+    .add_static_property("AccessForbiddenBicycle", &cr::SignalType::AccessForbiddenBicycle)
+    .add_static_property("AccessForbiddenWeight", &cr::SignalType::AccessForbiddenWeight)
+    .add_static_property("AccessForbiddenWidth", &cr::SignalType::AccessForbiddenWidth)
+    .add_static_property("AccessForbiddenHeight", &cr::SignalType::AccessForbiddenHeight)
+    .add_static_property("AccessForbiddenWrongDirection", &cr::SignalType::AccessForbiddenWrongDirection)
+    .add_static_property("ForbiddenUTurn", &cr::SignalType::ForbiddenUTurn)
+    .add_static_property("MaximumSpeed", &cr::SignalType::MaximumSpeed)
+    .add_static_property("ForbiddenOvertakingMotorvehicles", &cr::SignalType::ForbiddenOvertakingMotorvehicles)
+    .add_static_property("ForbiddenOvertakingTrucks", &cr::SignalType::ForbiddenOvertakingTrucks)
+    .add_static_property("AbsoluteNoStop", &cr::SignalType::AbsoluteNoStop)
+    .add_static_property("RestrictedStop", &cr::SignalType::RestrictedStop)
+    .add_static_property("HasWayNextIntersection", &cr::SignalType::HasWayNextIntersection)
+    .add_static_property("PriorityWay", &cr::SignalType::PriorityWay)
+    .add_static_property("PriorityWayEnd", &cr::SignalType::PriorityWayEnd)
+    .add_static_property("CityBegin", &cr::SignalType::CityBegin)
+    .add_static_property("CityEnd", &cr::SignalType::CityEnd)
+    .add_static_property("Highway", &cr::SignalType::Highway)
+    .add_static_property("DeadEnd", &cr::SignalType::DeadEnd)
+    .add_static_property("RecomendedSpeed", &cr::SignalType::RecomendedSpeed)
+    .add_static_property("RecomendedSpeedEnd", &cr::SignalType::RecomendedSpeedEnd)
+  ;
+
+  class_<cc::Landmark, boost::noncopyable, std::shared_ptr<cc::Landmark>>("Landmark", no_init)
+    .add_property("road_id", &cc::Landmark::GetRoadId)
+    .add_property("distance", &cc::Landmark::GetDistance)
+    .add_property("s", &cc::Landmark::GetS)
+    .add_property("t", &cc::Landmark::GetT)
+    .add_property("id", &cc::Landmark::GetId)
+    .add_property("name", &cc::Landmark::GetName)
+    .add_property("is_dynamic", &cc::Landmark::IsDynamic)
+    .add_property("orientation", &cc::Landmark::GetOrientation)
+    .add_property("z_offset", &cc::Landmark::GetZOffset)
+    .add_property("country", &cc::Landmark::GetCountry)
+    .add_property("type", &cc::Landmark::GetType)
+    .add_property("sub_type", &cc::Landmark::GetSubType)
+    .add_property("value", &cc::Landmark::GetValue)
+    .add_property("unit", &cc::Landmark::GetUnit)
+    .add_property("height", &cc::Landmark::GetHeight)
+    .add_property("width", &cc::Landmark::GetWidth)
+    .add_property("text", &cc::Landmark::GetText)
+    .add_property("h_offset", &cc::Landmark::GethOffset)
+    .add_property("pitch", &cc::Landmark::GetPitch)
+    .add_property("roll", &cc::Landmark::GetRoll)
+    .add_property("waypoint", &cc::Landmark::GetWaypoint)
+    .add_property("transform", CALL_RETURNING_COPY(cc::Landmark, GetTransform))
+    .def("get_lane_validities", &GetLaneValidities)
+  ;
+}

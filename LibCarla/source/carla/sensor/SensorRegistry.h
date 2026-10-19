@@ -1,0 +1,155 @@
+// Copyright (c) 2026 Computer Vision Center (CVC) at the Universitat Autonoma
+// de Barcelona (UAB).
+//
+// This work is licensed under the terms of the MIT license.
+// For a copy, see <https://opensource.org/licenses/MIT>.
+
+#ifndef LIBCARLA_SENSOR_REGISTRY_INCLUDE_H
+#define LIBCARLA_SENSOR_REGISTRY_INCLUDE_H
+
+#include "carla/sensor/CompositeSerializer.h"
+
+// =============================================================================
+// Follow the 4 steps to register a new sensor.
+// =============================================================================
+
+// 1. Include the serializer here.
+#include "carla/sensor/s11n/CollisionEventSerializer.h"
+#include "carla/sensor/s11n/DVSEventArraySerializer.h"
+#include "carla/sensor/s11n/EpisodeStateSerializer.h"
+#include "carla/sensor/s11n/GnssSerializer.h"
+#include "carla/sensor/s11n/ImageSerializer.h"
+#include "carla/sensor/s11n/NormalsImageSerializer.h"
+#include "carla/sensor/s11n/DistanceImageSerializer.h"
+#include "carla/sensor/s11n/OpticalFlowImageSerializer.h"
+#include "carla/sensor/s11n/IMUSerializer.h"
+#include "carla/sensor/s11n/LidarSerializer.h"
+#include "carla/sensor/s11n/NoopSerializer.h"
+#include "carla/sensor/s11n/ObstacleDetectionEventSerializer.h"
+#include "carla/sensor/s11n/RadarSerializer.h"
+#include "carla/sensor/s11n/SemanticLidarSerializer.h"
+#include "carla/sensor/s11n/GBufferUint8Serializer.h"
+#include "carla/sensor/s11n/GBufferFloatSerializer.h"
+#include "carla/sensor/s11n/V2XSerializer.h"
+#include "carla/sensor/s11n/VehicleStatusSerializer.h" // Autoware
+
+// 2. Add a forward-declaration of the sensor here.
+class ACollisionSensor;
+class ADepthCamera;
+class ANormalsCamera;
+class ADVSCamera;
+class AGnssSensor;
+class AInertialMeasurementUnit;
+class ALaneInvasionSensor;
+class AObstacleDetectionSensor;
+class AOpticalFlowCamera;
+class ARadar;
+class ARayCastSemanticLidar;
+class ARayCastLidar;
+class ASceneCaptureCamera;
+class ASceneCaptureCamera_RayTracedLens;
+class ASceneCaptureCamera_RayTracedLensDistance;
+class ASceneCaptureCamera_RayTracedLensInstance;
+class ASemanticSegmentationCamera;
+class AInstanceSegmentationCamera;
+class ARssSensor;
+class FWorldObserver;
+class ASceneCaptureCamera_WideAngleLens;
+class ADepthCamera_WideAngleLens;
+class AInstanceSegmentationCamera_WideAngleLens;
+class ASemanticSegmentationCamera_WideAngleLens;
+struct FCameraGBufferUint8;
+struct FCameraGBufferFloat;
+class AHSSLidar;
+class AV2XSensor;
+class ACustomV2XSensor;
+class AVehicleStatusSensor; // Autoware
+class AAutowareGnssSensor; // Autoware
+
+namespace carla {
+namespace sensor {
+
+  // 3. Register the sensor and its serializer in the SensorRegistry.
+
+  /// Contains a registry of all the sensors available and allows serializing
+  /// and deserializing sensor data for the types registered.
+  ///
+  /// Use s11n::NoopSerializer if the sensor does not send data (sensors that
+  /// work only on client-side).
+  using SensorRegistry = CompositeSerializer<
+    std::pair<ACollisionSensor *, s11n::CollisionEventSerializer>,
+    std::pair<ADepthCamera *, s11n::ImageSerializer>,
+    std::pair<ANormalsCamera *, s11n::NormalsImageSerializer>,
+    std::pair<ADVSCamera *, s11n::DVSEventArraySerializer>,
+    std::pair<AGnssSensor *, s11n::GnssSerializer>,
+    std::pair<AInertialMeasurementUnit *, s11n::IMUSerializer>,
+    std::pair<ALaneInvasionSensor *, s11n::NoopSerializer>,
+    std::pair<AObstacleDetectionSensor *, s11n::ObstacleDetectionEventSerializer>,
+    std::pair<AOpticalFlowCamera *, s11n::OpticalFlowImageSerializer>,
+    std::pair<ARadar *, s11n::RadarSerializer>,
+    std::pair<ARayCastSemanticLidar *, s11n::SemanticLidarSerializer>,
+    std::pair<ARayCastLidar *, s11n::LidarSerializer>,
+    std::pair<ARssSensor *, s11n::NoopSerializer>,
+    std::pair<ASceneCaptureCamera *, s11n::ImageSerializer>,
+    std::pair<ASceneCaptureCamera_RayTracedLens *, s11n::ImageSerializer>,
+    std::pair<ASemanticSegmentationCamera *, s11n::ImageSerializer>,
+    std::pair<AInstanceSegmentationCamera *, s11n::ImageSerializer>,
+    std::pair<FWorldObserver *, s11n::EpisodeStateSerializer>,
+    std::pair<ASceneCaptureCamera_WideAngleLens *, s11n::ImageSerializer>,
+    std::pair<ADepthCamera_WideAngleLens *, s11n::ImageSerializer>,
+    std::pair<AInstanceSegmentationCamera_WideAngleLens *, s11n::ImageSerializer>,
+    std::pair<ASemanticSegmentationCamera_WideAngleLens *, s11n::ImageSerializer>,
+    std::pair<FCameraGBufferUint8 *, s11n::GBufferUint8Serializer>,
+    std::pair<FCameraGBufferFloat *, s11n::GBufferFloatSerializer>,
+    std::pair<AHSSLidar *, s11n::LidarSerializer>,
+    std::pair<AV2XSensor *, s11n::CAMDataSerializer>,
+    std::pair<ACustomV2XSensor *, s11n::CustomV2XDataSerializer>,
+    std::pair<AVehicleStatusSensor *, s11n::VehicleStatusSerializer>, // Autoware
+    std::pair<AAutowareGnssSensor *, s11n::GnssSerializer>, // Autoware
+    // Appended at the end on purpose: the position in this list IS the wire type id,
+    // so inserting anywhere else would renumber every sensor after it.
+    std::pair<ASceneCaptureCamera_RayTracedLensDistance *, s11n::DistanceImageSerializer>,
+    // Tag AOV: the byte layout is the one sensor.camera.instance_segmentation already
+    // uses (R = label, G/B = 16-bit actor id), so it ships as a plain image.
+    std::pair<ASceneCaptureCamera_RayTracedLensInstance *, s11n::ImageSerializer>
+  >;
+
+} // namespace sensor
+} // namespace carla
+
+#endif // LIBCARLA_SENSOR_REGISTRY_INCLUDE_H
+
+#ifdef LIBCARLA_SENSOR_REGISTRY_WITH_SENSOR_INCLUDES
+
+// 4. Include the sensor here.
+#include "Carla/Sensor/CollisionSensor.h"
+#include "Carla/Sensor/DepthCamera.h"
+#include "Carla/Sensor/NormalsCamera.h"
+#include "Carla/Sensor/DVSCamera.h"
+#include "Carla/Sensor/GnssSensor.h"
+#include "Carla/Sensor/InertialMeasurementUnit.h"
+#include "Carla/Sensor/LaneInvasionSensor.h"
+#include "Carla/Sensor/ObstacleDetectionSensor.h"
+#include "Carla/Sensor/OpticalFlowCamera.h"
+#include "Carla/Sensor/Radar.h"
+#include "Carla/Sensor/RayCastLidar.h"
+#include "Carla/Sensor/RayCastSemanticLidar.h"
+#include "Carla/Sensor/RssSensor.h"
+#include "Carla/Sensor/SceneCaptureCamera.h"
+#include "Carla/Sensor/SceneCaptureCamera_RayTracedLens.h"
+#include "Carla/Sensor/SceneCaptureCamera_RayTracedLensDistance.h"
+#include "Carla/Sensor/SceneCaptureCamera_RayTracedLensInstance.h"
+#include "Carla/Sensor/SemanticSegmentationCamera.h"
+#include "Carla/Sensor/InstanceSegmentationCamera.h"
+#include "Carla/Sensor/WorldObserver.h"
+#include "Carla/Sensor/DepthCamera_WideAngleLens.h"
+#include "Carla/Sensor/SceneCaptureCamera_WideAngleLens.h"
+#include "Carla/Sensor/SemanticSegmentationCamera_WideAngleLens.h"
+#include "Carla/Sensor/InstanceSegmentationCamera_WideAngleLens.h"
+#include "Carla/Sensor/HSSLidar.h"
+#include "Carla/Sensor/V2XSensor.h"
+#include "Carla/Sensor/CustomV2XSensor.h"
+#include "Carla/Autoware/Sensors/VehicleStatusSensor.h" // Autoware
+#include "Carla/Autoware/Sensors/AutowareGnssSensor.h" // Autoware
+
+#endif // LIBCARLA_SENSOR_REGISTRY_WITH_SENSOR_INCLUDES

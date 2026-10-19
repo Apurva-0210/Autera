@@ -1,0 +1,7 @@
+# Python dependencies for AUTERA ADAS & CARLA Integration
+carla>=0.9.15
+numpy>=1.24.0
+opencv-python>=4.8.0
+pygame>=2.5.0
+matplotlib>=3.7.0
+pandas>=2.0.0

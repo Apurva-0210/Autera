@@ -1,0 +1,1661 @@
+---
+- module_name: carla
+  # - CLASSES ------------------------------
+  classes:
+  - class_name: LaneType
+    # - DESCRIPTION ------------------------
+    doc: >
+      Class that defines the possible lane types accepted by OpenDRIVE 1.4. This standards define the road information. The snipet in carla.Map.get_waypoint makes use of a waypoint to get the current and adjacent lane types.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: NONE
+      doc: >
+    - var_name: Driving
+      doc: >
+    - var_name: Stop
+      doc: >
+    - var_name: Shoulder
+      doc: >
+    - var_name: Biking
+      doc: >
+    - var_name: Sidewalk
+      doc: >
+    - var_name: Border
+      doc: >
+    - var_name: Restricted
+      doc: >
+    - var_name: Parking
+      doc: >
+    - var_name: Bidirectional
+      doc: >
+    - var_name: Median
+      doc: >
+    - var_name: Special1
+      doc: >
+    - var_name: Special2
+      doc: >
+    - var_name: Special3
+      doc: >
+    - var_name: RoadWorks
+      doc: >
+    - var_name: Tram
+      doc: >
+    - var_name: Rail
+      doc: >
+    - var_name: Entry
+      doc: >
+    - var_name: Exit
+      doc: >
+    - var_name: OffRamp
+      doc: >
+    - var_name: OnRamp
+      doc: >
+    - var_name: Any
+      doc: >
+        Every type except for NONE.
+
+  - class_name: LaneChange
+    # - DESCRIPTION ------------------------
+    doc: >
+      Class that defines the permission to turn either left, right, both or none (meaning only going straight is allowed). This information is stored for every carla.Waypoint according to the OpenDRIVE file. The snipet in carla.Map.get_waypoint shows how a waypoint can be used to learn which turns are permitted.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: NONE
+      doc: >
+        Traffic rules do not allow turning right or left, only going straight.
+    - var_name: Right
+      doc: >
+        Traffic rules allow turning right.
+    - var_name: Left
+      doc: >
+        Traffic rules allow turning left.
+    - var_name: Both
+      doc: >
+        Traffic rules allow turning either right or left.
+
+  - class_name: LaneMarkingColor
+    # - DESCRIPTION ------------------------
+    doc: >
+      Class that defines the lane marking colors according to OpenDRIVE 1.4.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: Standard
+      doc: >
+        White by default.
+    - var_name: Blue
+      doc: >
+    - var_name: Green
+      doc: >
+    - var_name: Red
+      doc: >
+    - var_name: White
+      doc: >
+    - var_name: Yellow
+      doc: >
+    - var_name: Other
+      doc: >
+
+  - class_name: LaneMarkingType
+    # - DESCRIPTION ------------------------
+    doc: >
+      Class that defines the lane marking types accepted by OpenDRIVE 1.4. The snipet in carla.Map.get_waypoint shows how a waypoint can be used to retrieve the information about adjacent lane markings.  
+      <br><br>
+      __Note on double types:__ Lane markings are defined under the OpenDRIVE standard that determines whereas a line will be considered "BrokenSolid" or "SolidBroken". For each road there is a center lane marking, defined from left to right regarding the lane's directions. The rest of the lane markings are defined in order from the center lane to the closest outside of the road.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: NONE
+      doc: >
+    - var_name: Other
+      doc: >
+    - var_name: Broken
+      doc: >
+    - var_name: Solid
+      doc: >
+    - var_name: SolidSolid
+      doc: >
+    - var_name: SolidBroken
+      doc: >
+    - var_name: BrokenSolid
+      doc: >
+    - var_name: BrokenBroken
+      doc: >
+    - var_name: BottsDots
+      doc: >
+    - var_name: Grass
+      doc: >
+    - var_name: Curb
+      doc: >
+
+  - class_name: Map
+    # - DESCRIPTION ------------------------
+    doc: >
+      Class containing the road information and waypoint managing. Data is retrieved from an OpenDRIVE file that describes the road. A query system is defined which works hand in hand with carla.Waypoint to translate geometrical information from the .xodr to natural world points. CARLA is currently working with [OpenDRIVE 1.4 standard](http://www.opendrive.org/docs/OpenDRIVEFormatSpecRev1.4H.pdf).
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: name
+      type: str
+      doc: >
+        The name of the map. It corresponds to the .umap from Unreal Engine that is loaded from a CARLA server, which then references to the .xodr road description.
+    # - METHODS ----------------------------
+    methods:
+    - def_name: geolocation_to_transform
+      params:
+      - param_name: geo_location
+        type: carla.GeoLocation
+        doc: >
+          Geographic coordinates to convert.
+      - param_name: projection
+        type: carla.GeoProjectionTM
+        doc: >
+          Projection to use. A carla.GeoProjectionUTM, carla.GeoProjectionWebMerc or carla.GeoProjectionLCC2SP is also accepted. Omit it to use the map's own projection.
+      return: carla.Location
+      doc: >
+        Converts geographic coordinates into simulation coordinates.
+    # --------------------------------------
+    - def_name: get_geoprojection
+      return: carla.GeoProjectionTM
+      doc: >
+        Returns the projection the map uses to convert between geographic and simulation coordinates. A carla.GeoProjectionUTM, carla.GeoProjectionWebMerc or carla.GeoProjectionLCC2SP is returned instead when the map declares one of those.
+    # --------------------------------------
+    - def_name: get_georeference
+      return: carla.GeoLocation
+      doc: >
+        Returns the geographic coordinates of the map's origin, as declared by its OpenDRIVE.
+    # --------------------------------------
+    - def_name: __init__
+      params:
+      - param_name: name
+        type: str
+        doc: >
+          Name of the current map.
+      - param_name: xodr_content
+        type: str
+        doc: >
+          .xodr content in string format.
+      return: list(carla.Transform)
+      doc: >
+        Constructor for this class. Though a map is automatically generated when initializing the world, using this method in no-rendering mode facilitates working with an .xodr without any CARLA server running.
+    # --------------------------------------
+    - def_name: generate_waypoints
+      params:
+      - param_name: distance
+        type: float
+        param_units: meters
+        doc: >
+          Approximate distance between waypoints.
+      return: list(carla.Waypoint)
+      doc: >
+        Returns a list of waypoints with a certain distance between them for every lane and centered inside of it. Waypoints are not listed in any particular order. Remember that waypoints closer than 2cm within the same road, section and lane will have the same identificator.
+    # --------------------------------------
+    - def_name: save_to_disk
+      params:
+      - param_name: path
+        doc: >
+          Path where the file will be saved.
+      doc: >
+        Saves the .xodr OpenDRIVE file of the current map to disk.
+    # --------------------------------------
+    - def_name: to_opendrive
+      doc: >
+        Returns the .xodr OpenDRIVe file of the current map as string.
+      return: str
+    # --------------------------------------
+    - def_name: transform_to_geolocation
+      params:
+      - param_name: location
+        type: carla.Location
+      return: carla.GeoLocation
+      doc: >
+        Converts a given `location`, a point in the simulation, to a carla.GeoLocation, which represents world coordinates. The geographical location of the map is defined inside OpenDRIVE within the tag <b><georeference></b>.
+    # --------------------------------------
+    - def_name: get_all_landmarks
+      doc: >
+        Returns all the landmarks in the map. Landmarks retrieved using this method have a __null__ waypoint.
+      return: list(carla.Landmark)
+    # --------------------------------------
+    - def_name: get_all_landmarks_from_id
+      doc: >
+        Returns the landmarks with a certain OpenDRIVE ID. Landmarks retrieved using this method have a __null__ waypoint.
+      params:
+      - param_name: opendrive_id
+        type: string
+        doc: >
+          The OpenDRIVE ID of the landmarks.
+      return: list(carla.Landmark)
+    # --------------------------------------
+    - def_name: get_all_landmarks_of_type
+      doc: >
+        Returns the landmarks of a specific type. Landmarks retrieved using this method have a __null__ waypoint.
+      params:
+      - param_name: type
+        type: string
+        doc: >
+          The type of the landmarks.
+      return: list(carla.Landmark)
+    # --------------------------------------
+    - def_name: get_landmark_group
+      doc: >
+        Returns the landmarks in the same group as the specified landmark (including itself). Returns an empty list if the landmark does not belong to any group.
+      params:
+      - param_name: landmark
+        type: carla.Landmark
+        doc: >
+          A landmark that belongs to the group.
+      return: list(carla.Landmark)
+    # --------------------------------------
+    - def_name: get_spawn_points
+      return: list(carla.Transform)
+      doc: >
+        Returns a list of recommendations made by the creators of the map to be used as spawning points for the vehicles. The list includes carla.Transform objects with certain location and orientation. Said locations are slightly on-air in order to avoid Z-collisions, so vehicles fall for a bit before starting their way.
+    # --------------------------------------
+    - def_name: get_topology
+      doc: >
+        Returns a list of tuples describing a minimal graph of the topology of the OpenDRIVE file. The tuples contain pairs of waypoints located either at the point a road begins or ends. The first one is the origin and the second one represents another road end that can be reached. This graph can be loaded into [NetworkX](https://networkx.github.io/) to work with. Output could look like this: <b>[(w0, w1), (w0, w2), (w1, w3), (w2, w3), (w0, w4)]</b>.
+      return: list(tuple(carla.Waypoint, carla.Waypoint))
+    # --------------------------------------
+    - def_name: get_waypoint
+      doc: >
+        Returns a waypoint that can be located in an exact location or translated to the center of the nearest lane. Said lane type can be defined using flags such as `LaneType.Driving & LaneType.Shoulder`.
+         The method will return <b>None</b> if the waypoint is not found, which may happen only when trying to retrieve a waypoint for an exact location. That eases checking if a point is inside a certain road, as otherwise, it will return the corresponding waypoint.
+      params:
+      - param_name: location
+        type: carla.Location
+        param_units: meters
+        doc: >
+          Location used as reference for the carla.Waypoint.
+      - param_name: project_to_road
+        type: bool
+        default: "True"
+        doc: >
+          If **True**, the waypoint will be at the center of the closest lane. This is the default setting. If **False**, the waypoint will be exactly in `location`. <b>None</b> means said location does not belong to a road.
+      - param_name: lane_type
+        type: carla.LaneType
+        default: carla.LaneType.Driving
+        doc: >
+          Limits the search for nearest lane to one or various lane types that can be flagged.
+      return: carla.Waypoint
+    # --------------------------------------
+    - def_name: get_waypoint_xodr
+      doc: >
+        Returns a waypoint if all the parameters passed are correct. Otherwise, returns __None__.
+      params:
+      - param_name: road_id
+        type: int
+        doc: >
+          ID of the road to get the waypoint.
+      - param_name: lane_id
+        type: int
+        doc: >
+          ID of the lane to get the waypoint.
+      - param_name: s
+        type: float
+        param_units: meters
+        doc: >
+          Specify the length from the road start.
+      return: carla.Waypoint
+    # --------------------------------------
+    - def_name: get_crosswalks
+      doc: >
+        Returns a list of locations with all crosswalk zones in the form of closed polygons. The first point is repeated, symbolizing where the polygon begins and ends.
+      return: list(carla.Location)
+    # --------------------------------------
+    - def_name: get_roads
+      doc: >
+        Returns every road in the map.
+      return: list(carla.Road)
+    # --------------------------------------
+    - def_name: get_road
+      params:
+      - param_name: road_id
+        type: int
+        doc: >
+          OpenDRIVE id of the road.
+      doc: >
+        Returns the road with this id, or <b>None</b> when the map has no such road.
+      return: carla.Road
+    # --------------------------------------
+    - def_name: get_lane_section
+      params:
+      - param_name: road_id
+        type: int
+      - param_name: section_id
+        type: int
+      doc: >
+        Returns the lane section, or <b>None</b> when the road or section is unknown.
+      return: carla.LaneSection
+    # --------------------------------------
+    - def_name: get_lane
+      params:
+      - param_name: road_id
+        type: int
+      - param_name: section_id
+        type: int
+      - param_name: lane_id
+        type: int
+      doc: >
+        Returns the lane, or <b>None</b> when the road, section or lane is unknown.
+      return: carla.Lane
+    # --------------------------------------
+    - def_name: get_junctions
+      doc: >
+        Returns every junction in the map.
+      return: list(carla.Junction)
+    # --------------------------------------
+    - def_name: get_junction_by_id
+      params:
+      - param_name: junction_id
+        type: int
+      doc: >
+        Returns the junction with this id, or <b>None</b> when the map has no such junction.
+      return: carla.Junction
+    # --------------------------------------
+    - def_name: cook_in_memory_map
+      params:
+      - param_name: path
+        type: str
+        doc: >
+          Path to the intended location of the stored binary map file.
+      doc: >
+        Generates a binary file from the CARLA map containing information used by the Traffic Manager. This method is only used during the import process for maps.
+    # --------------------------------------
+    - def_name: __str__
+    # --------------------------------------
+
+  - class_name: LaneMarking
+    # - DESCRIPTION ------------------------
+    doc: >
+      Class that gathers all the information regarding a lane marking according to [OpenDRIVE 1.4 standard](http://www.opendrive.org/docs/OpenDRIVEFormatSpecRev1.4H.pdf) standard.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: color
+      type: carla.LaneMarkingColor
+      doc: >
+        Actual color of the marking.
+    - var_name: lane_change
+      type: carla.LaneChange
+      doc: >
+        Permissions for said lane marking to be crossed.
+    - var_name: type
+      type: carla.LaneMarkingType
+      doc: >
+        Lane marking type.
+    - var_name: width
+      type: float
+      doc: >
+        Horizontal lane marking thickness.
+    # --------------------------------------
+
+  - class_name: Waypoint
+    # - DESCRIPTION ------------------------
+    doc: >
+      Waypoints in CARLA are described as 3D directed points. They have a carla.Transform which locates the waypoint in a road and orientates it according to the lane. They also store the road information belonging to said point regarding its lane and lane markings.  
+      <br><br>
+      All the information regarding waypoints and the [waypoint API](../../core_map/#navigation-in-carla) is retrieved as provided by the OpenDRIVE file. Once the client asks for the map object to the server, no longer communication will be needed.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: id
+      type: int
+      doc: >
+        The identifier is generated using a hash combination of the <b>road</b>, <b>section</b>, <b>lane</b> and <b>s</b> values that correspond to said point in the OpenDRIVE geometry. The <b>s</b> precision is set to 2 centimeters, so 2 waypoints closer than 2 centimeters in the same road, section and lane, will have the same identificator.
+    - var_name: transform
+      type: carla.Transform
+      doc: >
+        Position and orientation of the waypoint according to the current lane information. This data is computed the first time it is accessed. It is not created right away in order to ease computing costs when lots of waypoints are created but their specific transform is not needed.
+    - var_name: road_id
+      type: int
+      doc: >
+        OpenDRIVE road's id.
+    - var_name: section_id
+      type: int
+      doc: >
+        OpenDRIVE section's id, based on the order that they are originally defined.
+    - var_name: is_junction
+      type: bool
+      doc: >
+        <b>True</b> if the current Waypoint is on a junction as defined by OpenDRIVE.
+    - var_name: junction_id
+      type: int
+      doc: >
+        OpenDRIVE junction's id. For more information refer to OpenDRIVE [documentation](http://www.opendrive.org/docs/OpenDRIVEFormatSpecRev1.4H.pdf#page=20)
+    - var_name: lane_id
+      type: int
+      doc: >
+        OpenDRIVE lane's id, this value can be positive or negative which represents the direction of the current lane with respect to the road. For more information refer to OpenDRIVE [documentation](http://www.opendrive.org/docs/OpenDRIVEFormatSpecRev1.4H.pdf#page=20)
+    - var_name: s
+      type: float
+      param_units: meters
+      doc: >
+        OpenDRIVE <b>s</b> value of the current position.
+    - var_name: lane_width
+      type: float
+      param_units: meters
+      doc: >
+        Horizontal size of the road at current <b>s</b>.
+    - var_name: lane_change
+      type: carla.LaneChange
+      doc: >
+        Lane change definition of the current Waypoint's location, based on the traffic rules defined in the OpenDRIVE file. It states if a lane change can be done and in which direction.
+    - var_name: lane_type
+      type: carla.LaneType
+      doc: >
+        The lane type of the current Waypoint, based on OpenDRIVE 1.4 standard.
+    - var_name: right_lane_marking
+      type: carla.LaneMarking
+      doc: >
+        The right lane marking information based on the direction of the Waypoint.
+    - var_name: left_lane_marking
+      type: carla.LaneMarking
+      doc: >
+        The left lane marking information based on the direction of the Waypoint.
+    - var_name: is_rht
+      type: bool
+      doc: >
+        Flag indicating whether the waypoint is part of a right-handed traffic road.
+    # - METHODS ----------------------------
+    methods:
+    - def_name: next
+      params:
+      - param_name: distance
+        type: float
+        param_units: meters
+        doc: >
+          The approximate distance where to get the next waypoints.
+      return: list(carla.Waypoint)
+      doc: >
+        Returns a list of waypoints at a certain approximate `distance` from the current one. It takes into account the road and its possible deviations without performing any lane change and returns one waypoint per option.
+
+        The list may be empty if the lane is not connected to any other at the specified distance.
+    # --------------------------------------
+    - def_name: next_until_lane_end
+      params:
+      - param_name: distance
+        type: float
+        param_units: meters
+        doc: >
+          The approximate distance between waypoints.
+      return: list(carla.Waypoint)
+      doc: >
+        Returns a list of waypoints from this to the end of the lane separated by a certain `distance`.
+    # --------------------------------------
+    - def_name: previous
+      params:
+      - param_name: distance
+        type: float
+        param_units: meters
+        doc: >
+          The approximate distance where to get the previous waypoints.
+      return: list(carla.Waypoint)
+      doc: >
+        This method does not return the waypoint previously visited by an actor, but a list of waypoints at an approximate `distance` but in the opposite direction of the lane. Similarly to **<font color="#7fb800">next()</font>**, it takes into account the road and its possible deviations without performing any lane change and returns one waypoint per option.
+
+        The list may be empty if the lane is not connected to any other at the specified distance.
+    # --------------------------------------
+    - def_name: previous_until_lane_start
+      params:
+      - param_name: distance
+        type: float
+        param_units: meters
+        doc: >
+          The approximate distance between waypoints.
+      return: list(carla.Waypoint)
+      doc: >
+        Returns a list of waypoints from this to the start of the lane separated by a certain `distance`.
+    # --------------------------------------
+    - def_name: get_junction
+      return: carla.Junction
+      doc: >
+        If the waypoint belongs to a junction this method returns the associated junction object. Otherwise returns null.
+    # --------------------------------------
+    - def_name: get_landmarks
+      params:
+      - param_name: distance
+        type: float
+        param_units: meters
+        doc: >
+          The maximum distance to search for landmarks from the current waypoint.
+      - param_name: stop_at_junction
+        type: bool
+        default: False
+        doc: >
+          Enables or disables the landmark search through junctions.
+      return: list(carla.Landmark)
+      doc: >
+        Returns a list of landmarks in the road from the current waypoint until the specified distance.
+    # --------------------------------------
+    - def_name: get_landmarks_of_type
+      params:
+      - param_name: distance
+        param_units: meters
+        type: float
+        doc: >
+          The maximum distance to search for landmarks from the current waypoint.
+      - param_name: type
+        type: str
+        doc: >
+          The type of landmarks to search.
+      - param_name: stop_at_junction
+        type: bool
+        default: False
+        doc: >
+          Enables or disables the landmark search through junctions.
+      return: list(carla.Landmark)
+      doc: >
+        Returns a list of landmarks in the road of a specified type from the current waypoint until the specified distance.
+    # --------------------------------------
+    - def_name: get_left_lane
+      return: carla.Waypoint
+      doc: >
+        Generates a Waypoint at the center of the left lane based on the direction of the current Waypoint, taking into account if the lane change is allowed in this location.
+
+        Will return <b>None</b> if the lane does not exist
+    # --------------------------------------
+    - def_name: get_right_lane
+      return: carla.Waypoint
+      doc: >
+        Generates a waypoint at the center of the right lane based on the direction of the current waypoint, taking into account if the lane change is allowed in this location.
+
+        Will return <b>None</b> if the lane does not exist.
+
+        <b>Deprecated:</b> use get_right_waypoint().
+    # --------------------------------------
+    - def_name: get_right_waypoint
+      return: carla.Waypoint
+      doc: >
+        Generates a waypoint at the center of the right lane based on the direction of the current waypoint, taking into account if the lane change is allowed in this location. Replaces get_right_lane(), which is deprecated.
+
+        Will return <b>None</b> if the lane does not exist.
+    # --------------------------------------
+    - def_name: get_left_waypoint
+      return: carla.Waypoint
+      doc: >
+        Generates a waypoint at the center of the left lane based on the direction of the current waypoint, taking into account if the lane change is allowed in this location. Replaces get_left_lane(), which is deprecated.
+
+        Will return <b>None</b> if the lane does not exist.
+    # --------------------------------------
+    - def_name: get_lane
+      return: carla.Lane
+      doc: >
+        Returns the lane this waypoint samples.
+    # --------------------------------------
+    - def_name: get_road
+      return: carla.Road
+      doc: >
+        Returns the road this waypoint samples.
+    # --------------------------------------
+    - def_name: __str__
+    # --------------------------------------
+
+  - class_name: Road
+    # - DESCRIPTION ------------------------
+    doc: >
+      An OpenDRIVE road: a run of carriageway divided along its s coordinate into lane sections, each of which holds the lanes.
+
+      Roads join end to end through get_next_road() and get_previous_road(), or through a junction. There is deliberately no left or right here: OpenDRIVE gives roads no lateral relation, because a road already contains the lanes on both sides of its centre line. Lateral neighbours live on carla.Lane.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: id
+      type: int
+      doc: >
+        OpenDRIVE id of the road.
+    - var_name: name
+      type: str
+      doc: >
+        Name recorded in the OpenDRIVE file. Often empty.
+    - var_name: length
+      type: float
+      var_units: meters
+      doc: >
+        Length of the road.
+    - var_name: is_junction
+      type: bool
+      doc: >
+        Whether the road is part of a junction.
+    - var_name: junction_id
+      type: int
+      doc: >
+        Id of the junction this road belongs to, or -1 when it is not part of one.
+    - var_name: is_rht
+      type: bool
+      doc: >
+        Whether traffic on this road drives on the right.
+    - var_name: successor_id
+      type: int
+      doc: >
+        Id of the road that follows this one, as recorded in OpenDRIVE.
+    - var_name: predecessor_id
+      type: int
+      doc: >
+        Id of the road that precedes this one, as recorded in OpenDRIVE.
+    # - METHODS ----------------------------
+    methods:
+    - def_name: get_next_road
+      return: list(carla.Road)
+      doc: >
+        Returns the roads reachable by continuing forward.
+    # --------------------------------------
+    - def_name: get_previous_road
+      return: list(carla.Road)
+      doc: >
+        Returns the roads that lead into this one.
+    # --------------------------------------
+    - def_name: get_lanes
+      params:
+      - param_name: s
+        type: float
+        param_units: meters
+        doc: >
+          Distance along the road.
+      - param_name: lane_type
+        type: carla.LaneType
+        default: carla.LaneType.Driving
+        doc: >
+          Type of lanes to get.
+      return: list(carla.Lane)
+      doc: >
+        Returns every lane of the given type present at this distance along the road.
+    # --------------------------------------
+    - def_name: get_lane
+      params:
+      - param_name: section_id
+        type: int
+      - param_name: lane_id
+        type: int
+      return: carla.Lane
+      doc: >
+        Returns the lane with this id in this lane section, or <b>None</b> when it does not exist.
+    # --------------------------------------
+    - def_name: get_lane_at
+      params:
+      - param_name: s
+        type: float
+        param_units: meters
+      - param_name: lane_id
+        type: int
+      return: carla.Lane
+      doc: >
+        Returns the lane with this id in whichever lane section covers this distance along the road.
+    # --------------------------------------
+    - def_name: get_sections
+      return: list(carla.LaneSection)
+      doc: >
+        Returns every lane section of the road.
+    # --------------------------------------
+    - def_name: get_section
+      params:
+      - param_name: section_id
+        type: int
+      return: carla.LaneSection
+      doc: >
+        Returns the lane section with this id, or <b>None</b>.
+    # --------------------------------------
+    - def_name: get_section_at
+      params:
+      - param_name: s
+        type: float
+        param_units: meters
+      return: carla.LaneSection
+      doc: >
+        Returns the lane section covering this distance along the road, or <b>None</b>.
+    # --------------------------------------
+    - def_name: get_junction
+      return: carla.Junction
+      doc: >
+        Returns the junction this road belongs to, or <b>None</b> when it is not part of one.
+    # --------------------------------------
+    - def_name: get_transform_at
+      params:
+      - param_name: s
+        type: float
+        param_units: meters
+      return: carla.Transform
+      doc: >
+        Returns the transform at the centre of the road at this distance along it.
+    # --------------------------------------
+    - def_name: get_waypoints_at
+      params:
+      - param_name: s
+        type: float
+        param_units: meters
+      - param_name: lane_type
+        type: carla.LaneType
+        default: carla.LaneType.Driving
+      return: list(carla.Waypoint)
+      doc: >
+        Returns a cross-section of the road: one waypoint per lane of the given type, all at the same distance along the road. Cuts <b>across</b> the road, where get_waypoints() samples <b>along</b> it.
+    # --------------------------------------
+    - def_name: get_waypoints
+      params:
+      - param_name: distance
+        type: float
+        param_units: meters
+        doc: >
+          Spacing between samples.
+      - param_name: lane_type
+        type: carla.LaneType
+        default: carla.LaneType.Driving
+      return: list(carla.Waypoint)
+      doc: >
+        Returns waypoints sampled <b>along</b> the road every <code>distance</code> metres, on every lane of the given type. Not to be confused with get_waypoints_at(), which cuts across the road at one distance.
+    # --------------------------------------
+    - def_name: __eq__
+      params:
+      - param_name: other
+        type: carla.Road
+      return: bool
+      doc: >
+        Returns <b>True</b> if both roads have the same id.
+    # --------------------------------------
+    - def_name: __ne__
+      params:
+      - param_name: other
+        type: carla.Road
+      return: bool
+    # --------------------------------------
+    - def_name: __hash__
+      return: int
+    # --------------------------------------
+    - def_name: __str__
+    # --------------------------------------
+
+  - class_name: LaneSection
+    # - DESCRIPTION ------------------------
+    doc: >
+      A stretch of road over which the lane layout does not change.
+
+      An OpenDRIVE road is divided along its s coordinate into lane sections; lanes are added or dropped only at a section boundary. This is why a lane's identity carries a section id, and why carla.Lane.get_next_lane() can step into a different section, or return nothing where a lane simply ends.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: id
+      type: int
+      doc: >
+        OpenDRIVE id of the lane section, unique within its road.
+    - var_name: road_id
+      type: int
+      doc: >
+        Id of the road this section belongs to.
+    - var_name: s_start
+      type: float
+      var_units: meters
+      doc: >
+        Distance along the road at which this section begins.
+    - var_name: length
+      type: float
+      var_units: meters
+      doc: >
+        Length of the section.
+    # - METHODS ----------------------------
+    methods:
+    - def_name: get_road
+      return: carla.Road
+      doc: >
+        Returns the road this section belongs to.
+    # --------------------------------------
+    - def_name: get_lanes
+      params:
+      - param_name: lane_type
+        type: carla.LaneType
+        default: carla.LaneType.Driving
+        doc: >
+          Type of lanes to get.
+      return: list(carla.Lane)
+      doc: >
+        Returns every lane of the given type in this section.
+    # --------------------------------------
+    - def_name: get_lane
+      params:
+      - param_name: lane_id
+        type: int
+      return: carla.Lane
+      doc: >
+        Returns the lane with this id, or <b>None</b> when the section has no such lane.
+    # --------------------------------------
+    - def_name: contains_lane
+      params:
+      - param_name: lane_id
+        type: int
+      return: bool
+      doc: >
+        Whether this section has a lane with this id.
+    # --------------------------------------
+    - def_name: get_next_section
+      return: carla.LaneSection
+      doc: >
+        Returns the next section along the road, or <b>None</b> at the end.
+    # --------------------------------------
+    - def_name: get_previous_section
+      return: carla.LaneSection
+      doc: >
+        Returns the previous section along the road, or <b>None</b> at the start.
+    # --------------------------------------
+    - def_name: __eq__
+      params:
+      - param_name: other
+        type: carla.LaneSection
+      return: bool
+      doc: >
+        Returns <b>True</b> if both sections have the same road and section id.
+    # --------------------------------------
+    - def_name: __ne__
+      params:
+      - param_name: other
+        type: carla.LaneSection
+      return: bool
+    # --------------------------------------
+    - def_name: __hash__
+      return: int
+    # --------------------------------------
+    - def_name: __str__
+    # --------------------------------------
+
+  - class_name: Lane
+    # - DESCRIPTION ------------------------
+    doc: >
+      A single OpenDRIVE lane, identified by its road, lane section and lane id.
+
+      A lane lives inside exactly one lane section, which is why its identity carries the section: the same lane id on the same road is a different lane in a different section.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: id
+      type: int
+      doc: >
+        OpenDRIVE id of the lane. Negative to the right of the centre line, positive to the left; the centre lane is 0.
+    - var_name: road_id
+      type: int
+      doc: >
+        Id of the road this lane belongs to.
+    - var_name: section_id
+      type: int
+      doc: >
+        Id of the lane section this lane belongs to.
+    - var_name: type
+      type: carla.LaneType
+      doc: >
+        Type of the lane.
+    - var_name: length
+      type: float
+      var_units: meters
+      doc: >
+        Length of the lane.
+    - var_name: s_start
+      type: float
+      var_units: meters
+      doc: >
+        Distance along the road at which this lane's section begins.
+    - var_name: level
+      type: bool
+      doc: >
+        OpenDRIVE level flag: whether the lane keeps the road's superelevation.
+    - var_name: is_straight
+      type: bool
+      doc: >
+        Whether the lane has no curvature.
+    - var_name: is_positive_direction
+      type: bool
+      doc: >
+        Whether the lane runs along increasing s.
+    # - METHODS ----------------------------
+    methods:
+    - def_name: get_road
+      return: carla.Road
+      doc: >
+        Returns the road this lane belongs to.
+    # --------------------------------------
+    - def_name: get_section
+      return: carla.LaneSection
+      doc: >
+        Returns the lane section this lane belongs to.
+    # --------------------------------------
+    - def_name: get_width
+      params:
+      - param_name: s
+        type: float
+        param_units: meters
+        doc: >
+          Distance along the <b>road</b>, not an offset from the start of the lane.
+      return: float
+      return_units: meters
+      doc: >
+        Returns the width of the lane at this distance along the road.
+    # --------------------------------------
+    - def_name: get_transform
+      params:
+      - param_name: s
+        type: float
+        param_units: meters
+      return: carla.Transform
+      doc: >
+        Returns the transform at the centre of the lane at this distance along the road.
+    # --------------------------------------
+    - def_name: get_right_lane
+      return: carla.Lane
+      doc: >
+        Returns the lane to the right, or <b>None</b> at the edge of the road.
+
+        Crossing the centre line flips the sign of the lane id, so the lane returned may run in the <b>opposite direction</b>. This matches carla.Waypoint.get_right_waypoint(). Not to be confused with the deprecated carla.Waypoint.get_right_lane(), which returns a waypoint.
+    # --------------------------------------
+    - def_name: get_left_lane
+      return: carla.Lane
+      doc: >
+        Returns the lane to the left, or <b>None</b> at the edge of the road. See get_right_lane() on direction.
+    # --------------------------------------
+    - def_name: get_next_lane
+      return: list(carla.Lane)
+      doc: >
+        Returns the lanes this one leads into. Empty where the lane ends. Returns a list, as a lane may lead into several, typically at a junction.
+    # --------------------------------------
+    - def_name: get_previous_lane
+      return: list(carla.Lane)
+      doc: >
+        Returns the lanes that lead into this one.
+    # --------------------------------------
+    - def_name: get_waypoint
+      params:
+      - param_name: s
+        type: float
+        param_units: meters
+        doc: >
+          Distance along the <b>road</b>.
+      return: carla.Waypoint
+      doc: >
+        Returns the waypoint on this lane at this distance along the road, or <b>None</b> when the distance falls outside the lane.
+    # --------------------------------------
+    - def_name: get_waypoints
+      params:
+      - param_name: distance
+        type: float
+        param_units: meters
+        doc: >
+          Spacing between samples.
+      return: list(carla.Waypoint)
+      doc: >
+        Returns waypoints along this lane, every <code>distance</code> metres.
+    # --------------------------------------
+    - def_name: __eq__
+      params:
+      - param_name: other
+        type: carla.Lane
+      return: bool
+      doc: >
+        Returns <b>True</b> if both lanes have the same road, section and lane id.
+    # --------------------------------------
+    - def_name: __ne__
+      params:
+      - param_name: other
+        type: carla.Lane
+      return: bool
+    # --------------------------------------
+    - def_name: __hash__
+      return: int
+    # --------------------------------------
+    - def_name: __str__
+    # --------------------------------------
+
+  - class_name: Junction
+    # - DESCRIPTION ------------------------
+    doc: >
+      Class that embodies the intersections on the road described in the OpenDRIVE file according to OpenDRIVE 1.4 standards.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: id
+      type: int
+      doc: >
+        Identifier found in the OpenDRIVE file.
+    - var_name: bounding_box
+      type: carla.BoundingBox
+      doc: >
+        Bounding box encapsulating the junction lanes.
+    # - METHODS ----------------------------
+    methods:
+    - def_name: get_waypoints
+      params:
+      - param_name: lane_type
+        type: carla.LaneType
+        doc: >
+          Type of lanes to get the waypoints.
+      return: list(tuple(carla.Waypoint))
+      doc: >
+        Returns a list of pairs of waypoints. Every tuple on the list contains first an initial and then a final waypoint within the intersection boundaries that describe the beginning and the end of said lane along the junction. Lanes follow their OpenDRIVE definitions so there may be many different tuples with the same starting waypoint due to possible deviations, as this are considered different lanes.
+    # --------------------------------------
+    - def_name: get_connecting_roads
+      return: list(carla.Road)
+      doc: >
+        Returns the roads inside the junction. These are OpenDRIVE's connecting roads.
+    # --------------------------------------
+    - def_name: get_adjacent_roads
+      return: list(carla.Road)
+      doc: >
+        Returns the roads outside the junction that meet it.
+    # --------------------------------------
+    - def_name: get_entry_lanes
+      params:
+      - param_name: lane_type
+        type: carla.LaneType
+        default: carla.LaneType.Driving
+        doc: >
+          Type of lanes to get.
+      return: list(carla.Lane)
+      doc: >
+        Returns the lanes on the adjacent roads that feed into the junction.
+    # --------------------------------------
+    - def_name: get_exit_lanes
+      params:
+      - param_name: lane_type
+        type: carla.LaneType
+        default: carla.LaneType.Driving
+        doc: >
+          Type of lanes to get.
+      return: list(carla.Lane)
+      doc: >
+        Returns the lanes on the adjacent roads that the junction feeds into.
+    # --------------------------------------
+    - def_name: get_entry_waypoints
+      params:
+      - param_name: lane_type
+        type: carla.LaneType
+        default: carla.LaneType.Driving
+        doc: >
+          Type of lanes to get the waypoints.
+      return: list(carla.Waypoint)
+      doc: >
+        Returns one waypoint per entry lane, placed on the adjacent road where it meets the junction.
+    # --------------------------------------
+    - def_name: get_exit_waypoints
+      params:
+      - param_name: lane_type
+        type: carla.LaneType
+        default: carla.LaneType.Driving
+        doc: >
+          Type of lanes to get the waypoints.
+      return: list(carla.Waypoint)
+      doc: >
+        Returns one waypoint per exit lane, placed on the adjacent road where it leaves the junction.
+    # --------------------------------------
+
+  - class_name: LandmarkOrientation
+    # - DESCRIPTION ------------------------
+    doc: >
+      Helper class to define the orientation of a landmark in the road. The definition is not directly translated from OpenDRIVE but converted for the sake of understanding.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: Positive
+      doc: >
+        The landmark faces towards vehicles going on the same direction as the road's geometry definition (lanes 0 and negative in OpenDRIVE).
+    - var_name: Negative
+      doc: >
+        The landmark faces towards vehicles going on the opposite direction to the road's geometry definition (positive lanes in OpenDRIVE).
+    - var_name: Both
+      doc: >
+        Affects vehicles going in both directions of the road.
+    # --------------------------------------
+
+  - class_name: LandmarkType
+    # - DESCRIPTION ------------------------
+    doc: >
+      Helper class containing a set of commonly used landmark types as defined by the default country code in the [OpenDRIVE standard](http://opendrive.org/docs/OpenDRIVEFormatSpecRev1.5M.pdf) (Germany 2017).
+
+      __carla.Landmark does not reference this class__. The landmark type is a string that varies greatly depending on the country code being used. This class only makes it easier to manage some of the most commonly used in the default set by describing them as an enum.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: Danger
+      doc: >
+        Type 101.
+    - var_name: LanesMerging
+      doc: >
+        Type 121.
+    - var_name: CautionPedestrian
+      doc: >
+        Type 133.
+    - var_name: CautionBicycle
+      doc: >
+        Type 138.
+    - var_name: LevelCrossing
+      doc: >
+        Type 150.
+    - var_name: StopSign
+      doc: >
+        Type 206.
+    - var_name: YieldSign
+      doc: >
+        Type 205.
+    - var_name: MandatoryTurnDirection
+      doc: >
+        Type 209.
+    - var_name: MandatoryLeftRightDirection
+      doc: >
+        Type 211.
+    - var_name: TwoChoiceTurnDirection
+      doc: >
+        Type 214.
+    - var_name: Roundabout
+      doc: >
+        Type 215.
+    - var_name: PassRightLeft
+      doc: >
+        Type 222.
+    - var_name: AccessForbidden
+      doc: >
+        Type 250.
+    - var_name: AccessForbiddenMotorvehicles
+      doc: >
+        Type 251.
+    - var_name: AccessForbiddenTrucks
+      doc: >
+        Type 253.
+    - var_name: AccessForbiddenBicycle
+      doc: >
+        Type 254.
+    - var_name: AccessForbiddenWeight
+      doc: >
+        Type 263.
+    - var_name: AccessForbiddenWidth
+      doc: >
+        Type 264.
+    - var_name: AccessForbiddenHeight
+      doc: >
+        Type 265.
+    - var_name: AccessForbiddenWrongDirection
+      doc: >
+        Type 267.
+    - var_name: ForbiddenUTurn
+      doc: >
+        Type 272.
+    - var_name: MaximumSpeed
+      doc: >
+        Type 274.
+    - var_name: ForbiddenOvertakingMotorvehicles
+      doc: >
+        Type 276.
+    - var_name: ForbiddenOvertakingTrucks
+      doc: >
+        Type 277.
+    - var_name: AbsoluteNoStop
+      doc: >
+        Type 283.
+    - var_name: RestrictedStop
+      doc: >
+        Type 286.
+    - var_name: HasWayNextIntersection
+      doc: >
+        Type 301.
+    - var_name: PriorityWay
+      doc: >
+        Type 306.
+    - var_name: PriorityWayEnd
+      doc: >
+        Type 307.
+    - var_name: CityBegin
+      doc: >
+        Type 310.
+    - var_name: CityEnd
+      doc: >
+        Type 311.
+    - var_name: Highway
+      doc: >
+        Type 330.
+    - var_name: DeadEnd
+      doc: >
+        Type 357.
+    - var_name: RecomendedSpeed
+      doc: >
+        Type 380.
+    - var_name: RecomendedSpeedEnd
+      doc: >
+        Type 381.
+    # --------------------------------------
+
+  - class_name: Landmark
+    # - DESCRIPTION ------------------------
+    doc: >
+      Class that defines any type of traffic landmark or sign affecting a road. These class mediates between the [OpenDRIVE 1.4 standard](http://www.opendrive.org/docs/OpenDRIVEFormatSpecRev1.4H.pdf) definition of the landmarks and their representation in the simulation.
+      This class retrieves all the information defining a landmark in OpenDRIVE and facilitates information about which lanes does it affect and when.
+
+      Landmarks will be accessed by carla.Waypoint objects trying to retrieve the regulation of their lane. Therefore some attributes depend on the waypoint that is consulting the landmark and so, creating the object.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: road_id
+      type: int
+      doc: >
+        The OpenDRIVE ID of the road where this landmark is defined. Due to OpenDRIVE road definitions, this road may be different from the road the landmark is currently affecting. It is mostly the case in junctions where the road diverges in different routes.
+
+        <small>Example: a traffic light is defined in one of the divergent roads in a junction, but it affects all the possible routes</small>
+    - var_name: distance
+      type: float
+      var_units: meters
+      doc: >
+        Distance between the landmark and the waypoint creating the object (querying `get_landmarks` or `get_landmarks_of_type`).
+    - var_name: s
+      type: float
+      var_units: meters
+      doc: >
+        Distance where the landmark is positioned along the geometry of the road `road_id`.
+    - var_name: t
+      type: float
+      var_units: meters
+      doc: >
+        Lateral distance where the landmark is positioned from the edge of the road `road_id`.
+    - var_name: id
+      type: str
+      doc: >
+        Unique ID of the landmark in the OpenDRIVE file.
+    - var_name: name
+      type: str
+      doc: >
+        Name of the landmark in the in the OpenDRIVE file.
+    - var_name: is_dynamic
+      type: bool
+      doc: >
+        Indicates if the landmark has state changes over time such as traffic lights.
+    - var_name: orientation
+      type: carla.LandmarkOrientation
+      var_units: degrees
+      doc: >
+        Indicates which lanes the landmark is facing towards to.
+    - var_name: z_offset
+      type: float
+      var_units: meters
+      doc: >
+        Height where the landmark is placed.
+    - var_name: country
+      type: str
+      doc: >
+        Country code where the landmark is defined (default to OpenDRIVE is Germany 2017).
+    - var_name: type
+      type: str
+      doc: >
+        Type identifier of the landmark according to the country code.
+    - var_name: sub_type
+      type: str
+      doc: >
+        Subtype identifier of the landmark according to the country code.
+    - var_name: value
+      type: float
+      doc: >
+        Value printed in the signal (e.g. speed limit, maximum weight, etc).
+    - var_name: unit
+      type: str
+      doc: >
+        Units of measurement for the attribute `value`.
+    - var_name: height
+      type: float
+      var_units: meters
+      doc: >
+        Total height of the signal.
+    - var_name: width
+      type: float
+      var_units: meters
+      doc: >
+        Total width of the signal.
+    - var_name: text
+      type: str
+      doc: >
+        Additional text in the signal.
+    - var_name: h_offset
+      type: float
+      var_units: meters
+      doc: >
+        Orientation offset of the signal relative to the the definition of `road_id` at `s` in OpenDRIVE.
+    - var_name: pitch
+      type: float
+      var_units: meters
+      doc: >
+        Pitch rotation of the signal (Y-axis in [UE coordinates system](https://carla.readthedocs.io/en/latest/python_api/#carlarotation)).
+    - var_name: roll
+      type: float
+      doc: >
+        Roll rotation of the signal (X-axis in [UE coordinates system](https://carla.readthedocs.io/en/latest/python_api/#carlarotation)).
+    - var_name: waypoint
+      type: carla.Waypoint
+      doc: >
+        A waypoint placed in the lane of the one that made the query and at the `s` of the landmark. It is the first waypoint for which the landmark will be effective.
+    - var_name: transform
+      type: carla.Transform
+      doc: >
+        The location and orientation of the landmark in the simulation.
+    # - METHODS ----------------------------
+    methods:
+    - def_name: get_lane_validities
+      return: list(tuple(int))
+      doc: >
+        Returns which lanes the landmark is affecting to. As there may be specific lanes where the landmark is not effective, the return is a list of pairs containing ranges of the __lane_id__ affected:
+
+        <small>Example: In a road with 5 lanes, being 3 not affected: [(from_lane1,to_lane2),(from_lane4,to_lane5)]</small>
+    # --------------------------------------
+
+  - class_name: GeoOffsetTransform
+    # - DESCRIPTION ------------------------
+    doc: >
+      Class defining an optional offset transformation applied before UTM projection.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: offset_x
+      type: float
+      doc: >
+        X offset in meters.
+    - var_name: offset_y
+      type: float
+      doc: >
+        Y offset in meters.
+    - var_name: offset_z
+      type: float
+      doc: >
+        Z offset in meters.
+    - var_name: offset_cos_h
+      type: float
+      doc: >
+        Cosine of the heading offset rotation.
+    - var_name: offset_sin_h
+      type: float
+      doc: >
+        Sine of the heading offset rotation.
+    # - METHODS ----------------------------
+    methods:
+    - def_name: __init__
+      params:
+      - param_name: offset_x
+        type: float
+        default: 0.0
+        doc: >
+          X offset in meters.
+      - param_name: offset_y
+        type: float
+        default: 0.0
+        doc: >
+          Y offset in meters.
+      - param_name: offset_z
+        type: float
+        default: 0.0
+        doc: >
+          Z offset in meters.
+      - param_name: offset_hdg
+        type: float
+        default: 0.0
+        doc: >
+          Heading offset in radians.
+      return: carla.GeoOffsetTransform
+      doc: >
+        Constructor for this class.
+    - def_name: apply_transform
+      params:
+      - param_name: location
+        type: carla.Location
+        doc: >
+          Input location.
+      return: carla.Location
+      doc: >
+        Applies the offset transformation to a location.
+    - def_name: ApplyTransformation
+      params:
+      - param_name: location
+        type: carla.Location
+        doc: >
+          Input location.
+      return: carla.Location
+      doc: >
+        Applies the offset transformation to a location.
+
+        <b>Deprecated:</b> use apply_transform().
+    # - DUNDER METHODS ---------------------
+    dunder_methods:
+    - def_name: __eq__
+      params:
+      - param_name: other
+        type: carla.GeoOffsetTransform
+  # --------------------------------------
+
+  - class_name: GeoProjectionTM
+    # - DESCRIPTION ------------------------
+    doc: >
+      Class defining the Transverse Mercator map projection.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: lat_0
+      type: float
+      doc: >
+        Latitude of the center of the map.
+    - var_name: lon_0
+      type: float
+      doc: >
+        Longitude of the center of the map.
+    - var_name: k
+      type: float
+      doc: >
+        Scale factor.
+    - var_name: x_0
+      type: float
+      doc: >
+        False Easting offset.
+    - var_name: y_0
+      type: float
+      doc: >
+        False Northing offset.
+    - var_name: ellps
+      type: carla.GeoEllipsoid
+      doc: >
+        Geoellipsoid used for the projection.
+    # - METHODS ----------------------------
+    methods:
+    - def_name: __init__
+      params:
+      - param_name: lat_0
+        type: float
+        default: 0.0
+        doc: >
+          Latitude value for map origin.
+      - param_name: lon_0
+        type: float
+        default: 0.0
+        doc: >
+          Longitude value for map origin.
+      - param_name: k
+        type: float
+        default: 1.0
+        doc: >
+          Scale factor near origin.
+      - param_name: x_0
+        type: float
+        default: 0.0
+        doc: >
+          False Easting offset.
+      - param_name: y_0
+        type: float
+        default: 0.0
+        doc: >
+          False Northing offset.
+      - param_name: ellps
+        type: carla.GeoEllipsoid
+        default: carla.GeoEllipsoid
+        doc: >
+          Geoellipsoid used for the projection.
+      return: carla.GeoProjectionTM
+      doc: >
+        Constructor for this class.
+    # --------------------------------------
+
+  - class_name: GeoProjectionUTM
+    # - DESCRIPTION ------------------------
+    doc: >
+      Class defining the Universal Transverse Mercator map projection.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: zone
+      type: int
+      default: 31
+      doc: >
+        Longitude zone, 1-60.
+    - var_name: north
+      type: bool
+      default: True
+      doc: >
+        Boolean defining the northern (True) or southern (False) hemisphere.
+    - var_name: ellps
+      type: carla.GeoEllipsoid
+      doc: >
+        Geoellipsoid used for the projection.
+    - var_name: offset
+      type: carla.GeoOffsetTransform
+      doc: >
+        Optional offset transformation applied before projection. If None, no offset is applied.
+    # - METHODS ----------------------------
+    methods:
+    - def_name: __init__
+      params:
+      - param_name: zone
+        type: int
+        default: 31
+        doc: >
+          Longitude zone, 1-60.
+      - param_name: north
+        type: bool
+        default: True
+        doc: >
+          Boolean defining the northern (True) or southern (False) hemisphere.
+      - param_name: ellps
+        type: carla.GeoEllipsoid
+        default: carla.GeoEllipsoid
+        doc: >
+          Geoellipsoid used for the projection.
+      - param_name: offset
+        type: carla.GeoOffsetTransform
+        default: None
+        doc: >
+          Optional offset transformation applied before projection. If None, no offset is applied.
+      return: carla.GeoProjectionUTM
+      doc: >
+        Constructor for this class.
+    # --------------------------------------
+
+  - class_name: GeoProjectionWebMerc
+    # - DESCRIPTION ------------------------
+    doc: >
+      Class defining the Web Mercator map projection. Since the Web Mercator assumes a spherical earth, only the *a* parameter is relevant for the provided ellipsoid.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: ellps
+      type: carla.GeoEllipsoid
+      doc: >
+        Geoellipsoid used for the projection.
+    # - METHODS ----------------------------
+    methods:
+    - def_name: __init__
+      params:
+      - param_name: ellps
+        type: carla.GeoEllipsoid
+        default: carla.GeoEllipsoid
+        doc: >
+          Geoellipsoid used for the projection.
+      return: carla.GeoProjectionWebMerc
+      doc: >
+        Constructor for this class.
+    # --------------------------------------
+
+  - class_name: GeoProjectionLCC2SP
+    # - DESCRIPTION ------------------------
+    doc: >
+      Class defining the Lambert Conformal Conic 2SP map projection.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: lat_0
+      type: float
+      doc: >
+        Latitude of the center of the map.
+    - var_name: lat_1
+      type: float
+      doc: >
+        Latitude of 1st standard parallel.
+    - var_name: lat_2
+      type: float
+      doc: >
+        Latitude of 2nd standard parallel.
+    - var_name: lon_0
+      type: float
+      doc: >
+        Longitude of the center of the map.
+    - var_name: x_0
+      type: float
+      doc: >
+        False Easting offset.
+    - var_name: y_0
+      type: float
+      doc: >
+        False Northing offset.
+    - var_name: ellps
+      type: carla.GeoEllipsoid
+      doc: >
+        Geoellipsoid used for the projection.
+    # - METHODS ----------------------------
+    methods:
+    - def_name: __init__
+      params:
+      - param_name: lat_0
+        type: float
+        default: 0.0
+        doc: >
+          Latitude value for map origin.
+      - param_name: lat_1
+        type: float
+        default: -5.0
+        doc: >
+          Latitude of 1st standard parallel.
+      - param_name: lat_2
+        type: float
+        default: 5.0
+        doc: >
+          Latitude of 2nd standard parallel.
+      - param_name: lon_0
+        type: float
+        default: 0.0
+        doc: >
+          Longitude value for map origin.
+      - param_name: x_0
+        type: float
+        default: 0.0
+        doc: >
+          False Easting offset.
+      - param_name: y_0
+        type: float
+        default: 0.0
+        doc: >
+          False Northing offset.
+      - param_name: ellps
+        type: carla.GeoEllipsoid
+        default: carla.GeoEllipsoid
+        doc: >
+          Geoellipsoid used for the projection.
+      return: carla.GeoProjectionLCC2SP
+      doc: >
+        Constructor for this class.
+    # --------------------------------------
+
+  - class_name: GeoEllipsoid
+    # - DESCRIPTION ------------------------
+    doc: >
+      Geoellipsoid for map projection.
+    # - PROPERTIES -------------------------
+    instance_variables:
+    - var_name: a
+      type: float
+      doc: >
+        Semi-major axis in meters.
+    - var_name: f_inv
+      type: float
+      doc: >
+        Inverse flattening.
+    # - METHODS ----------------------------
+    methods:
+    - def_name: __init__
+      params:
+      - param_name: a
+        type: float
+        default: 6378137.0
+        doc: >
+          Semi-major axis in meters.
+      - param_name: f_inv
+        type: float
+        default: 298.257223563
+        doc: >
+          Inverse flattening.
+      return: carla.GeoEllipsoid
+      doc: >
+        Constructor for this class.
+    # --------------------------------------
+...

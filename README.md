@@ -59,23 +59,23 @@ AUTERA focuses on **heterogeneous urban traffic**, where multiple road-user type
 
 ```text
                     Urban Traffic Environment
-                              │
-          ┌───────────────────┼───────────────────┐
-          │                   │                   │
-       Passenger          Two-Wheelers       Pedestrians
-        Vehicles
-          │                   │                   │
-          └───────────────────┼───────────────────┘
-                              │
-                              ▼
-                     Heavy Commercial
-                         Vehicle
-                              │
-                              ▼
-                       ADAS Functions
-                              │
-                              ▼
-                     Safety Evaluation
+                               │
+           ┌───────────────────┴───────────────────┐
+           │                   │                   │
+        Passenger          Two-Wheelers       Pedestrians
+         Vehicles
+           │                   │                   │
+           └───────────────────┬───────────────────┘
+                               │
+                               ▼
+                      Heavy Commercial
+                          Vehicle
+                               │
+                               ▼
+                        ADAS Functions
+                               │
+                               ▼
+                      Safety Evaluation
 ```
 
 ---
@@ -109,7 +109,7 @@ Safety Metric Evaluation
 Scenario-Level Validation
 ```
 
-The framework is intended to allow controlled experimentation across different traffic configurations and safety-critical scenarios.
+The framework allows controlled experimentation across different traffic configurations and safety-critical scenarios.
 
 ---
 
@@ -117,9 +117,7 @@ The framework is intended to allow controlled experimentation across different t
 
 A central component of the framework is the use of multi-sensor information to represent the perception inputs available to an ADAS system.
 
-The simulation environment can be used to study sensor observations under varying traffic and environmental conditions.
-
-The project explores the interaction between:
+The simulation environment studies sensor observations under varying traffic and environmental conditions:
 
 ```text
        Camera
@@ -143,17 +141,13 @@ The project explores the interaction between:
     ADAS Decision
 ```
 
-Detailed sensor configurations and implementation-level details are intentionally limited while the associated research work is under review.
-
 ---
 
 ## ⏱️ Adaptive Time-to-Collision Reasoning
 
 AUTERA incorporates adaptive Time-to-Collision (TTC) reasoning as part of its safety-evaluation approach.
 
-TTC-based analysis can provide a quantitative representation of the temporal proximity between the ego vehicle and another road user.
-
-The framework investigates how safety assessment can account for the characteristics of heavy commercial vehicles rather than relying solely on fixed assumptions.
+TTC-based analysis provides a quantitative representation of the temporal proximity between the ego vehicle and another road user, accounting for pneumatic brake lag and payload dynamics:
 
 ```text
 Relative Position
@@ -172,49 +166,96 @@ Adaptive Safety Assessment
 ADAS Response / Evaluation
 ```
 
-Detailed thresholding and experimental methodology will be documented following the completion of the associated research review process.
+---
+
+## 🖥️ Live ADAS Cockpit & Validation Platform
+
+The framework is paired with an interactive automotive engineering cockpit running at `localhost:3000` with a backend telemetry server at `localhost:5000`.
+
+- **HTML5 Canvas Bird's-Eye View (BEV)**: Real-time radar range rings ($10\text{m}$ to $50\text{m}$), field of view cone, closing-velocity vectors, and dynamic color-coded hazard levels.
+- **Calibrated Vehicle Profiles**: Commercial 40t Semi-Trailer, 26t Rigid Truck, 16t Medium Duty, and reference SUV baseline.
+- **UNECE R152 Validation Scenarios**: Automated test executions (CCRs stationary, CCRm moving, CCRb $4\text{ m/s}^2$ deceleration, cut-in, low friction $\mu = 0.35$).
+- **Audit Reporting**: One-click generation and download of UNECE R152 safety compliance reports in structured JSON and certified text formats.
 
 ---
 
-## 🖥️ Simulation Environment
+## 📁 Repository Structure
 
-The project utilizes a simulation-oriented workflow involving:
+```plaintext
+Autera/
+├── README.md                    # Research overview, architecture, and documentation
+├── requirements.txt             # Python environment dependencies
+├── adas_final1.py               # Core CARLA ADAS simulation controller & dynamics
+├── adas_final1_paper_metrics.csv# Research validation metrics & benchmark data
+├── adas_final1_ttc_data.csv     # Time-To-Collision telemetry logs
+├── dashboard/
+│   ├── backend/
+│   │   ├── server.js            # Node.js ADAS telemetry server (port 5000)
+│   │   └── package.json         # Backend Express & Socket.IO dependencies
+│   └── frontend/
+│       └── public/
+│           └── index.html       # AUTERA ADAS Cockpit & Canvas BEV (port 3000)
+├── Lonavala Trial.xodr          # Custom OpenDRIVE Indian highway road network
+├── Lonavala Trial.fbx           # 3D roadway and terrain mesh
+├── kothrud_projected.osm        # Projected OpenStreetMap network (Pune, India)
+├── kothrud_sample.osm           # Sample road network
+├── PythonAPI/                   # CARLA Python API client libraries
+├── Co-Simulation/               # SUMO & PTV-Vissim co-simulation bridges
+├── Skills/                      # Antigravity agentic skill extensions
+└── Docs/                        # Complete CARLA architectural documentation
+```
 
-| Component | Role |
-|---|---|
-| CARLA | Vehicle, traffic and autonomous-driving simulation |
-| RoadRunner | Road/environment and scenario development |
-| Multi-Sensor Simulation | Generation of perception inputs |
-| Sensor Fusion | Combining complementary sensor information |
-| TTC Analysis | Safety and collision-risk evaluation |
-| Scenario Evaluation | ADAS validation under controlled conditions |
+---
+
+## 🛠️ Quickstart & Setup Guide
+
+### 1. Prerequisites
+- **Python 3.10+**
+- **Node.js 18+**
+- **CARLA 0.9.15 (Windows)**: Pre-compiled Unreal Engine assets ($16.6\text{ GB}$) exceed GitHub's $100\text{ MB}$ limit. Download CARLA 0.9.15 from the [CARLA Releases page](https://github.com/carla-simulator/carla/releases/tag/0.9.15) and place the `CarlaUE4` folder in the root directory.
+
+### 2. Environment Setup
+```bash
+# Python dependencies
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+
+# Backend dependencies
+cd dashboard/backend
+npm install
+```
+
+### 3. Launching the Platform
+```bash
+# Terminal 1: Launch CARLA Simulator (DirectX 11 mode)
+CarlaUE4.exe -dx11 -windowed -ResX=1280 -ResY=720 -quality-level=Low
+
+# Terminal 2: Start Telemetry Backend (Port 5000)
+cd dashboard/backend
+node server.js
+
+# Terminal 3: Launch Validation Cockpit (Port 3000)
+python -m http.server 3000 --directory dashboard/frontend/public
+
+# Terminal 4: Run the ADAS Controller
+python adas_final1.py
+```
+Open **`http://localhost:3000`** in any modern web browser to monitor live telemetry, inspect radar feeds, run UNECE R152 test scenarios, and export validation reports.
 
 ---
 
 ## 🔬 Research Workflow
 
-AUTERA is structured around a scenario-based validation methodology.
+AUTERA is structured around a scenario-based validation methodology:
 
-**1. Scenario Generation**
-Define traffic, road geometry, vehicle configuration and interaction conditions.
-
-**2. Simulation**
-Execute the scenario within the simulation environment.
-
-**3. Sensor Observation**
-Generate simulated observations from the configured sensor suite.
-
-**4. Perception & Fusion**
-Process sensor information to represent surrounding road users and the driving environment.
-
-**5. Safety Reasoning**
-Evaluate the relative motion and safety state of the ego vehicle.
-
-**6. ADAS Evaluation**
-Assess the behavior of the ADAS system under the given scenario.
-
-**7. Performance Analysis**
-Compare system behavior across different scenario configurations.
+1. **Scenario Generation**: Define traffic, road geometry, vehicle configuration, and interaction conditions.
+2. **Simulation**: Execute the scenario within the simulation environment.
+3. **Sensor Observation**: Generate simulated observations from the configured sensor suite.
+4. **Perception & Fusion**: Process sensor information to represent surrounding road users and the driving environment.
+5. **Safety Reasoning**: Evaluate the relative motion and safety state of the ego vehicle.
+6. **ADAS Evaluation**: Assess the behavior of the ADAS system under the given scenario.
+7. **Performance Analysis**: Compare system behavior across different scenario configurations.
 
 ---
 
@@ -222,8 +263,7 @@ Compare system behavior across different scenario configurations.
 
 AUTERA is designed around the principle that ADAS systems should be evaluated across diverse and representative traffic conditions, rather than relying exclusively on a small number of deterministic scenarios.
 
-The framework therefore emphasizes:
-
+The framework emphasizes:
 - Scenario diversity
 - Heterogeneous traffic
 - Heavy-vehicle dynamics
@@ -234,214 +274,27 @@ The framework therefore emphasizes:
 
 ---
 
-## 🔍 Research Focus
-
-The project investigates the intersection of:
-
-**Automotive Systems**
-- ADAS
-- Heavy commercial vehicles
-- Vehicle dynamics
-- Automotive safety
-
-**Simulation**
-- CARLA
-- RoadRunner
-- Scenario generation
-- Simulation-based validation
-
-**Perception**
-- Multi-sensor systems
-- Sensor fusion
-- Environment understanding
-
-**Safety**
-- Time-to-Collision
-- Relative motion
-- Safety-critical scenarios
-- Risk evaluation
-
-**Data Analysis**
-- Scenario comparison
-- Safety metrics
-- Simulation outputs
-- Performance evaluation
-
----
-
-## 📊 Evaluation
-
-The framework is intended to support quantitative evaluation of ADAS behavior across controlled simulation scenarios.
-
-Potential evaluation dimensions include:
-
-- Collision-risk measures
-- TTC behavior
-- Detection/perception behavior
-- ADAS response
-- Scenario severity
-- Traffic density
-- Vehicle interaction
-- Heavy-vehicle operating conditions
-
-Detailed experimental results and quantitative findings are currently withheld because the associated research work is under review.
-
----
-
-## 🧩 Engineering Contributions
-
-The project involved work across multiple layers of the simulation and validation pipeline, including:
-
-- Simulation environment development
-- Traffic scenario construction
-- Multi-sensor integration
-- Sensor-fusion workflow
-- Adaptive TTC reasoning
-- ADAS validation methodology
-- Scenario-based evaluation
-- Simulation result analysis
-
-The repository is intended to document the engineering direction and project architecture while maintaining appropriate boundaries around unpublished research.
-
----
-
-## 🛠️ Technology Stack
-
-```text
-Simulation
-├── CARLA
-└── RoadRunner
-
-Programming / Analysis
-├── Python
-└── [Additional tools used in the implementation]
-
-ADAS
-├── Multi-Sensor Fusion
-├── TTC-Based Safety Reasoning
-└── Scenario Validation
-
-Development
-├── Linux / Development Environment
-└── Git / GitHub
-```
-
-The exact software stack and versions will be documented as the public implementation is released.
-
----
-
-## 📁 Planned Repository Structure
-
-```text
-AUTERA/
-│
-├── README.md
-│
-├── docs/
-│   ├── architecture.md
-│   ├── methodology.md
-│   └── publication-status.md
-│
-├── scenarios/
-│   └── README.md
-│
-├── simulation/
-│   └── README.md
-│
-├── perception/
-│   └── README.md
-│
-├── safety/
-│   └── README.md
-│
-├── analysis/
-│   └── README.md
-│
-├── figures/
-│   └── README.md
-│
-└── LICENSE
-```
-
-The repository structure will be expanded as publication and project-release constraints permit.
-
----
-
 ## 📄 Publication Status
 
 **Research Work — Under Review**
 
 AUTERA is associated with ongoing research work that is currently under review.
 
-To respect the publication process, this repository currently provides a high-level technical overview rather than the complete research implementation, detailed experimental results, or publication-sensitive material.
+To respect the publication process, this repository provides the simulation architecture, telemetry pipeline, validation cockpit, and experimental scenario framework, while publication-sensitive experimental comparisons remain under review.
 
-Additional implementation details, experimental results, figures, and relevant research artifacts may be added following completion of the review process and subject to applicable publication and institutional guidelines.
-
----
-
-## 🚧 Current Status
-
-**Status:** Research / Under Review
-
-**Currently documented**
-- Research motivation
-- System concept
-- Simulation-driven approach
-- High-level architecture
-- ADAS validation methodology
-- Multi-sensor framework
-- Adaptive TTC reasoning
-
-**To be added**
-- Detailed implementation
-- Experimental methodology
-- Quantitative results
-- Scenario configurations
-- Evaluation plots
-- Additional technical documentation
-- Publication information
-
----
-
-## 🔮 Future Development
-
-Subject to research and publication constraints, future versions may include:
-
-- Expanded scenario libraries
-- Additional traffic configurations
-- More comprehensive sensor models
-- Extended HCV-specific safety evaluation
-- Automated scenario generation
-- Larger-scale simulation experiments
-- Additional ADAS functions
-- Extended performance analysis
-
----
-
-## ⚠️ Research & Publication Notice
-
-This repository is intended to provide a professional overview of the AUTERA project.
-
-Some technical details may intentionally be omitted while the associated research is under review.
-
-Please do not interpret the current repository as the complete research implementation.
+Additional implementation details, experimental results, and figures will be updated following completion of the formal peer review process.
 
 ---
 
 ## 👨‍💻 Author
 
-**Apurva Kumar**
-
-B.Tech — Electronics & Communication Engineering
-AI & ML Specialization
-MIT World Peace University, Pune, India
+**Apurva Kumar**  
+B.Tech — Electronics & Communication Engineering (AI & ML Specialization)  
+MIT World Peace University, Pune, India  
 
 ---
 
 ## 📌 Project
 
-**AUTERA**
-An India-Calibrated ADAS Framework for Heavy Commercial Vehicles in Heterogeneous Urban Traffic
-
-**Research Status**
-Under Review · ADAS · Automotive Systems · Heavy Commercial Vehicles · Simulation · CARLA · RoadRunner · Sensor Fusion
+**AUTERA**: An India-Calibrated ADAS Framework for Heavy Commercial Vehicles in Heterogeneous Urban Traffic  
+*Research Status: Under Review · ADAS · Automotive Systems · Heavy Commercial Vehicles · Simulation · CARLA · RoadRunner · Sensor Fusion*

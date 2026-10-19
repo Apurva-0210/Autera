@@ -1,0 +1,126 @@
+
+/// This file has functionality for motion planning based on information
+/// from localization, collision avoidance and traffic light response.
+
+#pragma once
+
+#include "carla/trafficmanager/DataStructures.h"
+#include "carla/trafficmanager/InMemoryMap.h"
+#include "carla/trafficmanager/LocalizationUtils.h"
+#include "carla/trafficmanager/Parameters.h"
+#include "carla/trafficmanager/RandomGenerator.h"
+#include "carla/trafficmanager/SimulationState.h"
+#include "carla/trafficmanager/Stage.h"
+#include "carla/trafficmanager/TrackTraffic.h"
+
+namespace carla {
+namespace traffic_manager {
+
+using LocalMapPtr = std::shared_ptr<InMemoryMap>;
+using TLMap = std::unordered_map<std::string, SharedPtr<client::Actor>>;
+
+class MotionPlanStage: Stage {
+private:
+  const std::vector<ActorId> &vehicle_id_list;
+  SimulationState &simulation_state;
+  const Parameters &parameters;
+  const BufferMap &buffer_map;
+  TrackTraffic &track_traffic;
+  // PID paramenters for various road conditions.
+  const std::vector<float> urban_longitudinal_parameters;
+  const std::vector<float> highway_longitudinal_parameters;
+  const std::vector<float> urban_lateral_parameters;
+  const std::vector<float> highway_lateral_parameters;
+  const LocalizationFrame &localization_frame;
+  const CollisionFrame &collision_frame;
+  const TLFrame &tl_frame;
+  // Structure holding the controller state for registered vehicles.
+  std::unordered_map<ActorId, StateEntry> pid_state_map;
+  // Structure to keep track of duration between teleportation
+  // in hybrid physics mode.
+  std::unordered_map<ActorId, cc::Timestamp> teleportation_instance;
+  // Stuck/misaligned-vehicle recovery bookkeeping: when the vehicle first
+  // stopped making commanded progress, and the K-turn maneuver state
+  // (current phase deadline + whether the phase reverses).
+  struct RecoveryState {
+    double phase_until;
+    bool reversing;
+    // Turn direction latched at maneuver entry. Recomputing it from the
+    // instantaneous deviation sign every tick makes the maneuver cancel
+    // itself when the target sits near dead-astern: each rock past 180 deg
+    // flips the sign and the phases undo each other.
+    float steer_direction;
+  };
+  std::unordered_map<ActorId, double> stuck_since;
+  std::unordered_map<ActorId, RecoveryState> recovery_state;
+  ControlFrame &output_array;
+  cc::Timestamp current_timestamp;
+  RandomGenerator &random_device;
+  const LocalMapPtr &local_map;
+  std::unordered_map<ActorId, std::pair<float, bool>> &large_vehicles;
+
+  std::pair<bool, float> CollisionHandling(const CollisionHazardData &collision_hazard,
+                                           const bool tl_hazard,
+                                           const cg::Vector3D ego_velocity,
+                                           const cg::Vector3D ego_heading,
+                                           const float max_target_velocity);
+
+  bool SafeAfterJunction(const LocalizationData &localization,
+                         const bool tl_hazard,
+                         const bool collision_emergency_stop);
+
+  [[nodiscard]] float CalculateBaseOffset(
+      const ActorId actor_id,
+      const Buffer &waypoint_buffer,
+      const bool is_target_junction,
+      const uint64_t target_index);
+
+  /// Returns true when the lateral band that the wide-turn offset would swing
+  /// `actor_id` into is occupied by a nearby vehicle. Gathers the overlapping
+  /// vehicles from track_traffic and delegates the geometric decision to the
+  /// pure IsOffsetSideOccupied helper.
+  [[nodiscard]] bool IsWideTurnSideOccupied(
+      const ActorId actor_id,
+      const cg::Vector3D offset_direction,
+      const float offset_magnitude);
+
+  float GetLandmarkTargetVelocity(const SimpleWaypoint& waypoint,
+                                  const cg::Location vehicle_location,
+                                  const ActorId actor_id,
+                                  float max_target_velocity);
+
+  float GetTurnTargetVelocity(const Buffer &waypoint_buffer,
+                              const cg::Location vehicle_location,
+                              float max_target_velocity);
+
+public:
+  MotionPlanStage(const std::vector<ActorId> &vehicle_id_list,
+                  SimulationState &simulation_state,
+                  const Parameters &parameters,
+                  const BufferMap &buffer_map,
+                  TrackTraffic &track_traffic,
+                  const std::vector<float> &urban_longitudinal_parameters,
+                  const std::vector<float> &highway_longitudinal_parameters,
+                  const std::vector<float> &urban_lateral_parameters,
+                  const std::vector<float> &highway_lateral_parameters,
+                  const LocalizationFrame &localization_frame,
+                  const CollisionFrame &collision_frame,
+                  const TLFrame &tl_frame,
+                  ControlFrame &output_array,
+                  RandomGenerator &random_device,
+                  const LocalMapPtr &local_map,
+                  std::unordered_map<ActorId, std::pair<float, bool>> &large_vehicles);
+
+  /// Pins one frame for the whole cycle; reading it per vehicle lets a frame
+  /// land mid-cycle and skews the controller period within a cycle.
+  void SetCycleTimestamp(const cc::Timestamp &timestamp);
+
+  void Update(const unsigned long index);
+
+  void RemoveActor(const ActorId actor_id);
+
+  void Reset();
+};
+
+} // namespace traffic_manager
+} // namespace carla

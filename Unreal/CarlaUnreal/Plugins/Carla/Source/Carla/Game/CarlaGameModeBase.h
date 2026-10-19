@@ -1,0 +1,224 @@
+// Copyright (c) 2026 Computer Vision Center (CVC) at the Universitat Autonoma
+// de Barcelona (UAB).
+//
+// This work is licensed under the terms of the MIT license.
+// For a copy, see <https://opensource.org/licenses/MIT>.
+
+#pragma once
+
+#include "Carla/Actor/CarlaActorFactory.h"
+#include "Carla/Game/CarlaEpisode.h"
+#include "Carla/Game/CarlaGameInstance.h"
+#include "Carla/Game/TaggerDelegate.h"
+#include "Carla/OpenDrive/OpenDrive.h"
+#include "Carla/Recorder/CarlaRecorder.h"
+#include "Carla/Sensor/SceneCaptureSensor.h"
+#include "Carla/Settings/CarlaSettingsDelegate.h"
+#include "Carla/Traffic/TrafficLightManager.h"
+#include "Carla/Util/ObjectRegister.h"
+#include "Carla/Weather/Weather.h"
+
+#include <util/disable-ue4-macros.h>
+#include <carla/rpc/Texture.h>
+#include <carla/rpc/MaterialParameter.h>
+#include <util/enable-ue4-macros.h>
+
+#include <util/ue-header-guard-begin.h>
+#include "CoreMinimal.h"
+#include "GameFramework/GameModeBase.h"
+#include "MapGen/LargeMapManager.h"
+#include <util/ue-header-guard-end.h>
+
+#include <optional>
+
+#include "CarlaGameModeBase.generated.h"
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnEpisodeInitialisedDelegate, UCarlaEpisode*, InitialisedEpisode);
+
+/// Base class for the CARLA Game Mode.
+UCLASS(HideCategories=(ActorTick))
+class CARLA_API ACarlaGameModeBase : public AGameModeBase
+{
+  GENERATED_BODY()
+
+public:
+
+  ACarlaGameModeBase(const FObjectInitializer& ObjectInitializer);
+
+  const UCarlaEpisode &GetCarlaEpisode() const
+  {
+    check(Episode != nullptr);
+    return *Episode;
+  }
+
+  const std::optional<carla::road::Map>& GetMap() const {
+    return Map;
+  }
+
+  const FString GetFullMapPath() const;
+
+  // get path relative to Content folder
+  const FString GetRelativeMapPath() const;
+
+  UFUNCTION(Exec, Category = "CARLA Game Mode")
+  void DebugShowSignals(bool enable);
+
+  UFUNCTION(BlueprintCallable, Category = "CARLA Game Mode")
+  ATrafficLightManager* GetTrafficLightManager();
+
+  UFUNCTION(Category = "Carla Game Mode", BlueprintCallable)
+  const TArray<FTransform>& GetSpawnPointsTransforms() const{
+    return SpawnPointsTransforms;
+  }
+
+  UFUNCTION(Category = "Carla Game Mode", BlueprintCallable, CallInEditor, Exec)
+  TArray<FBoundingBox> GetAllBBsOfLevel(uint8 TagQueried = 0xFF) const;
+
+  UFUNCTION(Category = "Carla Game Mode", BlueprintCallable, CallInEditor, Exec)
+  TArray<FEnvironmentObject> GetEnvironmentObjects(uint8 QueriedTag = 0xFF) const
+  {
+    return ObjectRegister->GetEnvironmentObjects(QueriedTag);
+  }
+
+  void EnableEnvironmentObjects(const TSet<uint64>& EnvObjectIds, bool Enable);
+
+  void EnableOverlapEvents();
+
+  void CheckForEmptyMeshes();
+
+  UFUNCTION(Category = "Carla Game Mode", BlueprintCallable, CallInEditor, Exec)
+  void LoadMapLayer(int32 MapLayers);
+
+  UFUNCTION(Category = "Carla Game Mode", BlueprintCallable, CallInEditor, Exec)
+  void UnLoadMapLayer(int32 MapLayers);
+
+  UFUNCTION(Category = "Carla Game Mode")
+  ULevel* GetULevelFromName(FString LevelName);
+
+  UFUNCTION(BlueprintCallable, Category = "Carla Game Mode")
+  void OnLoadStreamLevel();
+
+  UFUNCTION(BlueprintCallable, Category = "Carla Game Mode")
+  void OnUnloadStreamLevel();
+
+  ALargeMapManager* GetLMManager() const {
+    return LMManager;
+  }
+
+  AActor* FindActorByName(const FString& ActorName);
+
+  UTexture2D* CreateUETexture(const carla::rpc::TextureColor& Texture);
+  UTexture2D* CreateUETexture(const carla::rpc::TextureFloatColor& Texture);
+
+  void ApplyTextureToActor(
+      AActor* Actor,
+      UTexture2D* Texture,
+      const carla::rpc::MaterialParameter& TextureParam);
+
+  [[deprecated("This command no longer makes sense since the apply_textures API relies on IDs.")]]
+  TArray<FString> GetNamesOfAllActors();
+
+  /// Gravitational acceleration used by IMU sensors.
+  /// Default is Earth's, approximately 9.81 m/s^2.
+  UPROPERTY(BlueprintReadOnly, EditAnywhere, Category="Sensor Gravity")
+  float IMUSensorGravity = 9.81f;
+
+  FOnEpisodeInitialisedDelegate OnEpisodeInitialisedDelegate;
+
+protected:
+
+  void InitGame(const FString &MapName, const FString &Options, FString &ErrorMessage) override;
+
+  void RestartPlayer(AController *NewPlayer) override;
+
+  void BeginPlay() override;
+
+  void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+  void Tick(float DeltaSeconds) override;
+
+  /// Loads the episode georeference (parsing the map's OpenDRIVE by default)
+  /// and stores the recommended spawn points. Virtual so Autoware maps can
+  /// take the georeference from an MGRS data asset instead (tier4 port).
+  virtual void LoadGeoReference();
+
+  void StoreSpawnPoints();
+
+  UPROPERTY()
+  UCarlaEpisode *Episode = nullptr;
+
+private:
+
+  /// Tags actors of World Partition cells as they stream in. The legacy
+  /// ALargeMapManager used to do this for WorldComposition tiles, but it
+  /// retires itself on World Partition maps, which left streamed-in cells
+  /// untagged (semantic segmentation rendered them unlabeled).
+  void OnLevelAddedToWorld(ULevel* InLevel, UWorld* InWorld);
+
+  void SpawnActorFactories();
+
+  void GenerateSpawnPoints();
+
+  void ParseOpenDrive();
+
+public:
+
+  // Public so map managers can refresh environment objects after relocating
+  // actors (e.g. traffic sign height adjustment).
+  void RegisterEnvironmentObjects();
+
+private:
+
+  void ConvertMapLayerMaskToMapNames(int32 MapLayer, TArray<FName>& OutLevelNames);
+
+  void OnEpisodeSettingsChanged(const FEpisodeSettings &Settings);
+
+  UPROPERTY()
+  UCarlaGameInstance *GameInstance = nullptr;
+
+  UPROPERTY()
+  UTaggerDelegate *TaggerDelegate = nullptr;
+
+  UPROPERTY()
+  UCarlaSettingsDelegate *CarlaSettingsDelegate = nullptr;
+
+  UPROPERTY()
+  ACarlaRecorder *Recorder = nullptr;
+
+  UPROPERTY()
+  UObjectRegister* ObjectRegister = nullptr;
+
+  /// The class of Weather to spawn.
+  UPROPERTY(Category = "CARLA Game Mode", EditAnywhere)
+  TSubclassOf<AWeather> WeatherClass;
+
+  /// List of actor spawners that will be used to define and spawn the actors
+  /// available in game.
+  UPROPERTY(Category = "CARLA Game Mode", EditAnywhere)
+  TSet<TSubclassOf<ACarlaActorFactory>> ActorFactories;
+
+  UPROPERTY()
+  TArray<FTransform> SpawnPointsTransforms;
+
+  UPROPERTY()
+  TArray<ACarlaActorFactory *> ActorFactoryInstances;
+
+  UPROPERTY()
+  ATrafficLightManager* TrafficLightManager = nullptr;
+
+  ALargeMapManager* LMManager = nullptr;
+
+  FDelegateHandle OnEpisodeSettingsChangeHandle;
+
+  std::optional<carla::road::Map> Map;
+
+  int PendingLevelsToLoad = 0;
+  int PendingLevelsToUnLoad = 0;
+
+  bool ReadyToRegisterObjects = false;
+
+  // We keep a global uuid to allow the load/unload layer methods to be called
+  // in the same tick
+  int32 LatentInfoUUID = 0;
+
+};

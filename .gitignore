@@ -1,0 +1,48 @@
+# ==========================================
+# AUTERA ADAS & CARLA Platform - .gitignore
+# ==========================================
+
+# 1. CARLA Unreal Engine Binaries & Cooked Content (16.6 GB)
+# Download the CARLA pre-compiled package from:
+# https://github.com/carla-simulator/carla/releases/tag/0.9.15
+/CarlaUE4/
+CarlaUE4/
+
+# 2. Third-Party Installers & SDKs (> 100MB exceeds GitHub limit)
+vulkan-sdk.exe
+*.exe.tmp
+
+# 3. Python Virtual Environments & Caches
+.venv/
+venv/
+env/
+ENV/
+__pycache__/
+*.py[cod]
+*$py.class
+.ruff_cache/
+.pytest_cache/
+
+# 4. Node.js Dependencies & Logs
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 5. CARLA Unreal Editor Tutorial Screen Recordings (983 MB of animated GIFs)
+# Preserves all markdown documentation in Docs/ while excluding heavy gif media
+Docs/img/
+
+# 6. Local Diagnostic Dumps & Hardware Logs
+directx.html
+dxdiag_report.txt
+*.log
+
+# 7. IDE, OS & System Metadata
+.vscode/
+.idea/
+Thumbs.db
+[Dd]esktop.ini
+.DS_Store
+nul

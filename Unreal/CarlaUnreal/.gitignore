@@ -1,0 +1,34 @@
+Binaries
+Build
+Debug
+DerivedDataCache
+Intermediate
+Saved
+Plugins/Carla/Binaries
+Plugins/Carla/Build
+Plugins/Carla/CarlaServer
+Plugins/Carla/CarlaDependencies
+Plugins/Carla/Debug
+Plugins/Carla/DerivedDataCache
+Plugins/Carla/Intermediate
+Plugins/Carla/Saved
+
+/Content
+Config/CarlaSettings.ini
+Config/DefaultEditor.ini
+Config/CarSimConfig.ini
+
+*.code-workspace
+.idea
+.vscode
+.ignore
+
+*.sln
+CMakeLists.txt
+Makefile
+
+# cook release metadata written by -createreleaseversion (package target)
+Releases
+
+# content packs authored locally (carla-pack init writes here)
+Plugins/Packs

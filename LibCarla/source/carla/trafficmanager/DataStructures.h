@@ -1,0 +1,80 @@
+
+/// This file contains definitions of common data structures used in traffic manager.
+
+#pragma once
+
+#include <chrono>
+#include <deque>
+#include <vector>
+
+#include "carla/client/Actor.h"
+#include "carla/geom/Location.h"
+#include "carla/geom/Rotation.h"
+#include "carla/geom/Vector3D.h"
+#include "carla/rpc/ActorId.h"
+#include "carla/rpc/Command.h"
+#include "carla/rpc/TrafficLightState.h"
+
+#include "carla/trafficmanager/SimpleWaypoint.h"
+
+namespace carla {
+namespace traffic_manager {
+
+namespace chr = std::chrono;
+namespace cc = carla::client;
+namespace cg = carla::geom;
+
+using ActorId = carla::ActorId;
+using ActorPtr = carla::SharedPtr<cc::Actor>;
+using JunctionID = carla::road::JuncId;
+using Junction = carla::SharedPtr<carla::client::Junction>;
+using SimpleWaypointPtr = std::shared_ptr<SimpleWaypoint>;
+using Buffer = std::deque<SimpleWaypointPtr>;
+using BufferMap = std::unordered_map<carla::ActorId, Buffer>;
+using TimeInstance = chr::time_point<chr::system_clock, chr::nanoseconds>;
+using TLS = carla::rpc::TrafficLightState;
+
+struct LocalizationData {
+  SimpleWaypointPtr junction_end_point;
+  SimpleWaypointPtr safe_point;
+  bool is_at_junction_entrance;
+  /// False when the localization stage could not place the vehicle on the map
+  /// -- a map without a single drivable waypoint (EmptyMap, an OpenDRIVE file
+  /// with no road). Every later stage assumes a non-empty waypoint buffer, so
+  /// TrafficManagerLocal::Step skips such a vehicle for this cycle.
+  bool localized = false;
+};
+using LocalizationFrame = std::vector<LocalizationData>;
+
+struct CollisionHazardData {
+  float available_distance_margin;
+  ActorId hazard_actor_id;
+  bool hazard;
+};
+using CollisionFrame = std::vector<CollisionHazardData>;
+
+using ControlFrame = std::vector<carla::rpc::Command>;
+
+using TLFrame = std::vector<bool>;
+
+/// Structure to hold the actuation signals.
+struct ActuationSignal {
+  float throttle;
+  float brake;
+  float steer;
+};
+
+/// Structure to hold the controller state.
+struct StateEntry {
+  cc::Timestamp time_instance;
+  float angular_deviation;
+  float velocity_deviation;
+  float steer;
+  float throttle {0.0f};
+  float brake {0.0f};
+  /// Zero is a safe initial value: the shaping raises it to the current speed.
+  float reference_velocity {0.0f};
+};
+
+} // namespace traffic_manager
+} // namespace carla

@@ -1,0 +1,35 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<osm version="0.6" generator="ChatGPT">
+
+  <!-- Nodes -->
+  <node id="1" lat="18.5200" lon="73.7800"/>
+  <node id="2" lat="18.5150" lon="73.7850"/>
+  <node id="3" lat="18.5100" lon="73.7900"/>
+  <node id="4" lat="18.5050" lon="73.8000"/>
+
+  <!-- Traffic Signal -->
+  <node id="10" lat="18.5150" lon="73.7850">
+    <tag k="highway" v="traffic_signals"/>
+  </node>
+
+  <!-- Main Road -->
+  <way id="100">
+    <nd ref="1"/>
+    <nd ref="2"/>
+    <nd ref="3"/>
+    <nd ref="4"/>
+    <tag k="highway" v="primary"/>
+    <tag k="lanes" v="4"/>
+    <tag k="name" v="Kothrud Main Road"/>
+  </way>
+
+  <!-- Bridge section -->
+  <way id="101">
+    <nd ref="2"/>
+    <nd ref="3"/>
+    <tag k="highway" v="primary"/>
+    <tag k="bridge" v="yes"/>
+    <tag k="layer" v="1"/>
+  </way>
+
+</osm>
